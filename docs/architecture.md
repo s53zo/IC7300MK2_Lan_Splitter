@@ -100,3 +100,9 @@ Use radio-side timeouts and operational interlocks appropriate to the station.
 See [validation](validation.md) for tested cases and gaps, and
 [research](research.md) for the distinction between the official inner CI-V
 commands and the reverse-engineered native LAN envelope.
+
+Owner stop requests bypass ordinary queue saturation by cancelling that owner's
+queued work and taking a bounded priority position after the in-flight reply.
+A PTT-off request immediately retires queued media and blocks audio rearming; a
+late PTT-on acknowledgement cannot undo that stop. Reply correlation still
+requires consuming the current transaction or resetting on timeout.

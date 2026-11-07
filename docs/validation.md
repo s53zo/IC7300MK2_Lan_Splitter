@@ -24,11 +24,12 @@ dependencies. `check` runs Node syntax checks; ESLint provides static linting.
 The source is plain JavaScript, with no compiler/typecheck stage. These checks do
 not establish protocol correctness by themselves.
 
-Local execution: **75 tests passed, zero failures/skips**, comprising 32 broker,
+Local execution: **78 tests passed, zero failures/skips**, comprising 35 broker,
 4 configuration, 10 UDP integration, 7 lifecycle/operations, 5 packet/transport,
 and 17 native-server tests. The earlier 73-test suite also passed
-on Node.js 22.23.4; the two added cases exercise the hardware-probe script against
-a synthetic radio, without changing the service implementation. ESLint and syntax checks passed. `npm audit` reported
+on Node.js 22.23.4; subsequent cases cover the hardware-probe script against a synthetic radio
+and ensure owner stop requests survive full command queues without late
+PTT acknowledgements rearming audio. ESLint and syntax checks passed. `npm audit` reported
 zero vulnerabilities, including development tooling. A minimatch override pins
 11.0.5 to address GHSA-g3hv-75wg-m249 in the development dependency tree.
 
@@ -77,10 +78,12 @@ the admission memory budget for the requested client count; the normal default
 | macOS | Local x64 Node 22.23.4/26.13.0 suite, CLI lifecycle, clean package installation/help and native wfweb smoke; hosted macOS CI also passed Node 22 and 24 |
 | Linux | GitHub Ubuntu CI passed Node 22 and 24: lint, syntax, automated tests, package inspection |
 | Raspberry Pi | No actual installation, capacity or lifecycle run yet |
-| Windows | GitHub Windows CI passed Node 22 and 24: lint, syntax, tests and package inspection; 72 passed and one SIGTERM test skipped per job. Console Ctrl+C and installed Task Scheduler stop remain unverified |
+| Windows | GitHub Windows CI passed Node 22 and 24: lint, syntax, tests and package inspection; one SIGTERM test is skipped per job. Console Ctrl+C and installed Task Scheduler stop remain unverified |
 
-All six hosted jobs passed in [Verify run 42408064183](https://github.com/s53zo/IC7300MK2_Lan_Splitter/actions/runs/42408064183),
-for source commit `babc6dc38d42cd82996f26a12510a65057aacff2`. These execute real
+The initial 73-test matrix passed all six hosted jobs in [Verify run 42408064183](https://github.com/s53zo/IC7300MK2_Lan_Splitter/actions/runs/42408064183),
+for source commit `babc6dc38d42cd82996f26a12510a65057aacff2`.
+[Current verification runs](https://github.com/s53zo/IC7300MK2_Lan_Splitter/actions/workflows/ci.yml)
+record the exact source and results for subsequent regressions. These execute real
 UDP service lifecycle tests on each operating system. They do not establish
 actual Raspberry Pi operation or native Windows console/service stop behavior.
 Service templates are supplied for systemd, launchd and Windows Task Scheduler;

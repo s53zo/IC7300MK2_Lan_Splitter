@@ -398,3 +398,43 @@ test('CW completion bound includes maximum dash weighting at the slowest keying 
   const before = performance.now(); send(a, [0x17, 0x30, 0x30]); await tick();
   assert.ok(broker.cwDeadline >= before + 12000);
 });
+
+test('TX owner PTT-off bypasses a full queue and discards its queued mutations', async (t) => {
+  const { radio, broker, a, send } = await setup(t, { maxQueued: 2, maxPerClient: 3 });
+  send(a, [0x1c, 0, 1]); await tick();
+  radio.auto = false;
+  send(a, [3]);
+  const pendingRead = radio.commands.at(-1);
+  send(a, [5, 1]); send(a, [5, 2]);
+  assert.equal(broker.queue.length, 2);
+  send(a, [0x1c, 0, 0]);
+  const acceptedStop = broker.queue.some((item) => item.policy.release === 'ptt');
+  assert.ok(broker.queue.length <= 2);
+  radio.auto = true; radio.respond(pendingRead); await tick();
+  assert.ok(acceptedStop, 'stop must not be rejected by ordinary queue limits');
+  assert.equal(radio.commands.some((f) => f[4] === 5), false, 'cancelled owner mutations never reach radio');
+  assert.equal(radio.ptt, false);
+  assert.equal(broker.owner, null);
+});
+
+test('pending PTT-on ACK cannot rearm audio after the owner requested PTT-off', async (t) => {
+  const { radio, server, broker, a, send } = await setup(t);
+  radio.auto = false;
+  send(a, [0x1c, 0, 1]);
+  const pendingOn = radio.commands.at(-1);
+  send(a, [0x1c, 0, 0]);
+  radio.respond(pendingOn);
+  const pendingOff = radio.commands.at(-1);
+  const rearmed = radio.playback.keyed;
+  server.emit('audio', a, Buffer.alloc(8, 9));
+  radio.auto = true; radio.respond(pendingOff); await tick();
+  assert.equal(rearmed, false, 'late PTT-on ACK must not enable audio during stopping');
+  assert.equal(radio.media.length, 0);
+  assert.equal(broker.owner, null);
+});
+
+test('invalid broker queue capacities fail before starting timers', () => {
+  for (const options of [{ maxQueued: 0 }, { maxQueued: -1 }, { maxPerClient: 1.5 }]) {
+    assert.throws(() => new Broker(new Radio(), new Server(), options), /Invalid broker/);
+  }
+});

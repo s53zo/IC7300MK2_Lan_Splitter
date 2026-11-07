@@ -67,6 +67,9 @@ class Broker extends EventEmitter {
     this.server = server;
     this.explicitAddress = options.address !== undefined;
     this.options = { address: 0xb6, requestTimeoutMs: 2000, maxQueued: 1024, maxPerClient: 64, pollMs: 250, autoStartGraceMs: 1000, ...options };
+    for (const key of ['maxQueued', 'maxPerClient']) {
+      if (!Number.isSafeInteger(this.options[key]) || this.options[key] < 1) throw new Error(`Invalid broker ${key}`);
+    }
     this.queue = [];
     this.parsers = new Map();
     this.radioParser = new FrameParser();
@@ -77,6 +80,7 @@ class Broker extends EventEmitter {
     this.activeTriggers = new Set();
     this.observedTx = false;
     this.releasing = false;
+    this.stopRequested = false;
     this.generation = 0;
     this.stats = { commands: 0, rejected: 0, timeouts: 0, audioDropped: 0 };
     this.listeners = [
@@ -110,6 +114,7 @@ class Broker extends EventEmitter {
     this.ready = false;
     this.synchronizing = false;
     this.releasing = false;
+    this.stopRequested = false;
     this.invalidateTx();
     this.owner = null;
     this.lease = null;
@@ -185,6 +190,7 @@ class Broker extends EventEmitter {
     if (!this.ready || this.closed || client?.active === false || policy.invalid) return false;
     if (policy.read) return true;
     if (this.releasing) return false;
+    if (this.stopRequested && policy.release !== 'ptt') return false;
     if (this.owner && this.owner !== client) return false;
     if (this.observedTx && !this.owner) return false;
     return true;
@@ -197,13 +203,31 @@ class Broker extends EventEmitter {
     for (const bytes of parser.push(chunk)) {
       if (bytes[2] !== this.options.address && bytes[2] !== 0) { this.negative(client, bytes); continue; }
       const policy = classify(bytes);
+      const urgent = this.owner === client && Boolean(policy.release) && this.allowed(client, policy);
+      if (urgent) {
+        // A TX stop cannot be refused because ordinary client polling filled
+        // the queue. Cancel this producer's queued work, then keep one bounded
+        // priority position without preempting the in-flight CI-V reply.
+        const keep = [];
+        for (const item of this.queue) {
+          if (item.client === client) this.reject(item, new Error('Owner requested TX stop'));
+          else keep.push(item);
+        }
+        this.queue = keep;
+        if (this.queue.length >= this.options.maxQueued) this.reject(this.queue.pop(), new Error('TX stop needs queue capacity'));
+        if (policy.release === 'ptt') {
+          this.stopRequested = true;
+          this.invalidateTx();
+        }
+      }
       const count = this.queue.reduce((n, item) => n + (item.client === client ? 1 : 0), this.pending?.client === client ? 1 : 0);
-      if (!this.allowed(client, policy) || this.queue.length >= this.options.maxQueued || count >= this.options.maxPerClient) {
+      if (!this.allowed(client, policy) || (!urgent && (this.queue.length >= this.options.maxQueued || count >= this.options.maxPerClient))) {
         this.negative(client, bytes);
         continue;
       }
       this.stats.commands++;
-      this.queue.push({ client, bytes, policy, generation: this.generation, mediaGeneration: client.mediaGeneration });
+      const item = { client, bytes, policy, generation: this.generation, mediaGeneration: client.mediaGeneration };
+      if (urgent) this.queue.unshift(item); else this.queue.push(item);
       this.pump();
     }
   }
@@ -333,7 +357,7 @@ class Broker extends EventEmitter {
           this.broadcastState(item.policy.read ? bytes : item.bytes);
           if (item.bytes[4] === 0x16 && item.bytes[5] === 0x46 && item.bytes[6] === 0) this.txObligations.delete('vox');
           if (item.policy.tx && item.client.active !== false
-            && item.mediaGeneration === item.client.mediaGeneration && !this.releasing) {
+            && item.mediaGeneration === item.client.mediaGeneration && !this.releasing && !this.stopRequested) {
             this.activeTriggers.add(item.policy.tx);
             this.updateLease();
             if (item.policy.tx === 'ptt' || item.policy.tx === 'vox') this.session.playback?.setKeyed(true);
@@ -364,7 +388,7 @@ class Broker extends EventEmitter {
   }
 
   audio(client, pcm) {
-    if (!this.ready || this.releasing || this.owner !== client || client.active === false || !['ptt', 'vox'].includes(this.lease)) {
+    if (!this.ready || this.releasing || this.stopRequested || this.owner !== client || client.active === false || !['ptt', 'vox'].includes(this.lease)) {
       this.stats.audioDropped++;
       return;
     }
@@ -389,6 +413,7 @@ class Broker extends EventEmitter {
   async release() {
     if (this.releasing) return this.releasePromise;
     this.releasing = true;
+    this.stopRequested = true;
     this.invalidateTx();
     const generation = this.generation;
     this.releasePromise = (async () => {
@@ -415,6 +440,7 @@ class Broker extends EventEmitter {
         this.cwDeadline = 0;
         this.observedTx = false;
         this.releasing = false;
+        this.stopRequested = false;
         this.emit('status', { state: 'ready' });
         this.pump();
       } catch (error) {
