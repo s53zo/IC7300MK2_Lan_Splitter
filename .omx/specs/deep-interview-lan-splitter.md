@@ -1,6 +1,8 @@
 # IC-7300MK2 LAN splitter requirements
 
-Status: Requirements clarified; implementation has not started.
+Status: Implemented and verified with synthetic/native-client tests and three-OS CI.
+Physical-radio testing remains pending availability and dummy-load readiness.
+See ../../docs/validation.md for current evidence and limits.
 Profile: standard, 12 recorded rounds including credential follow-up. Estimated residual ambiguity 15%; target <=20%. This is a judgment estimate, not measured protocol coverage.
 Context: greenfield. See ../research/lan-splitter-findings.md and context snapshot under ../context/.
 

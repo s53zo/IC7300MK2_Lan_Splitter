@@ -1,6 +1,6 @@
 # Validation record
 
-Recorded 2026-11-07 on macOS/x64 with Node.js 26.13.0. Synthetic tests and native
+Recorded 2026-11-07. Local macOS/x64 tests used Node.js 22.23.4 and 26.13.0. Synthetic tests and native
 application packet interoperability pass within the coverage below. This is not
 a claim that every client, operating system, firmware revision or physical TX
 failure mode has been verified.
@@ -59,7 +59,9 @@ on loopback. Counts below are aggregate packets delivered to clients.
 | 32 | 1 | 6,272 /6,272 | 608 /608 |
 | 128 | 1 | 62,720 /62,720 | 6,272 /6,272 |
 
-The 128-client run delivered 92.597 Mbps of audio payload and reported 191 MiB RSS.
+The initial 128-client run delivered 92.597 Mbps of audio payload and reported 191 MiB RSS.
+A final repeat delivered all 61,440 audio and 6,144 scope packets, with one upstream
+session, 90.643 Mbps audio payload and 202.2 MiB aggregate-process RSS.
 RSS includes the simulator, splitter and all synthetic clients in the benchmark
 process. These are successful workloads, not measured maximum capacity, physical
 LAN throughput, real-radio latency or RF quality. The benchmark explicitly raises
@@ -71,13 +73,15 @@ the admission memory budget for the requested client count; the normal default
 
 | Platform | Evidence |
 | --- | --- |
-| macOS/x64, Node 22.23.4 and 26.13.0 | Local automated suite, lint, syntax, CLI lifecycle, clean package installation/help and native wfweb smoke executed |
-| Linux | CI matrix configured for Node 22/24; no executed runner result yet |
+| macOS | Local x64 Node 22.23.4/26.13.0 suite, CLI lifecycle, clean package installation/help and native wfweb smoke; hosted macOS CI also passed Node 22 and 24 |
+| Linux | GitHub Ubuntu CI passed Node 22 and 24: lint, syntax, automated tests, package inspection |
 | Raspberry Pi | No actual installation, capacity or lifecycle run yet |
-| Windows | CI matrix configured for Node 22/24; no executed runner result yet; Windows graceful-stop semantics require actual validation |
+| Windows | GitHub Windows CI passed Node 22 and 24: lint, syntax, tests and package inspection; 72 passed and one SIGTERM test skipped per job. Console Ctrl+C and installed Task Scheduler stop remain unverified |
 
-Portable Node built-ins and an absence of a compile step support the intended
-platforms, but do not establish install/start/stop behavior on unexecuted systems.
+All six hosted jobs passed in [Verify run 42408064183](https://github.com/s53zo/IC7300MK2_Lan_Splitter/actions/runs/42408064183),
+for source commit `babc6dc38d42cd82996f26a12510a65057aacff2`. These execute real
+UDP service lifecycle tests on each operating system. They do not establish
+actual Raspberry Pi operation or native Windows console/service stop behavior.
 Service templates are supplied for systemd, launchd and Windows Task Scheduler;
 the launchd plist passes `plutil -lint`. Windows Task Scheduler's forced stop is
 not a guaranteed graceful TX release.
@@ -94,7 +98,7 @@ not a guaranteed graceful TX release.
 | Reconnect resets session/ownership and never intentionally replays old work | Timeout, media-release, replay invalidation, media-generation and partial-frame tests | Tested; native packets have no TX-epoch field, leaving a delayed never-before-seen packet ambiguity within one association |
 | Loss/reorder/duplicates/wrap/slow clients/bounded resources/auth failures | Packet/transport and 17 server tests; broker overload and integration retransmission cases | Tested within configured windows and synthetic faults; hostile sustained-load/long-soak testing remains |
 | Explicit supported/rejected negotiated formats | Server unsupported-format test and capability literal tests | Codec4/mono/48 kHz supported; other formats deliberately rejected |
-| Linux/macOS/Windows operation | Local macOS suite and lifecycle checks; multi-OS CI definition and service examples | macOS verified within recorded scope; Linux/Windows/Raspberry Pi execution remains |
+| Linux/macOS/Windows operation | Local macOS suite and lifecycle checks; multi-OS CI definition and service examples | Linux/macOS/Windows CI and local macOS verified within recorded scope; Raspberry Pi hardware and native Windows console/service stop remain |
 | Hardware receive/control and brief dummy-load TX | Requirements authorization and documented hardware procedure | Not executed; availability and dummy-load readiness still required |
 | Secret handling, install/config/docs and source attribution | Config validation/redaction tests, CLI help, package inspection, README/operations/research/NOTICE | Implemented and locally checked; no real password is included in repository examples |
 
