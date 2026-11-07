@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.local.json
+*.tgz
+coverage/
+.omx/state/
+.omx/logs/

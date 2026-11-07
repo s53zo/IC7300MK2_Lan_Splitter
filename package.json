@@ -1,0 +1,44 @@
+{
+  "name": "ic7300mk2-lan-splitter",
+  "version": "0.1.0",
+  "description": "Share one IC-7300MK2 native Icom LAN connection between multiple clients",
+  "license": "AGPL-3.0-only",
+  "type": "commonjs",
+  "main": "src/splitter.js",
+  "bin": {
+    "icom-lan-splitter": "src/cli.js"
+  },
+  "files": [
+    "src",
+    "docs",
+    "scripts",
+    "third_party",
+    "LICENSE",
+    "NOTICE.md",
+    "README.md",
+    "tests/fixtures"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node scripts/check.js",
+    "test:capacity": "node scripts/benchmark.js",
+    "lint": "eslint src tests scripts eslint.config.cjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "globals": "17.14.0"
+  },
+  "overrides": {
+    "minimatch": "11.0.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/s53zo/IC7300MK2_Lan_Splitter.git"
+  },
+  "homepage": "https://github.com/s53zo/IC7300MK2_Lan_Splitter#readme"
+}

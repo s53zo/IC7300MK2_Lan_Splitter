@@ -1,0 +1,22 @@
+[Unit]
+Description=IC-7300MK2 native LAN splitter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=icom-splitter
+WorkingDirectory=/opt/icom-splitter
+ExecStart=/usr/bin/node /opt/icom-splitter/src/cli.js
+Environment=ICOM_RADIO_HOST=10.0.1.25
+Environment=ICOM_USERNAME=your-radio-user
+Environment=ICOM_PASSWORD_FILE=/etc/icom-splitter/password
+Environment=ICOM_BIND_ADDRESS=192.168.1.20
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
