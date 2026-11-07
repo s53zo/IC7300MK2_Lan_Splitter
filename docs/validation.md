@@ -24,10 +24,11 @@ dependencies. `check` runs Node syntax checks; ESLint provides static linting.
 The source is plain JavaScript, with no compiler/typecheck stage. These checks do
 not establish protocol correctness by themselves.
 
-Local execution: **73 tests passed, zero failures/skips**, comprising 32 broker,
-4 configuration, 10 UDP integration, 5 lifecycle/operations, 5 packet/transport,
-and 17 native-server tests. The final 73-test suite also passed
-on Node.js 22.23.4. ESLint and syntax checks passed. `npm audit` reported
+Local execution: **75 tests passed, zero failures/skips**, comprising 32 broker,
+4 configuration, 10 UDP integration, 7 lifecycle/operations, 5 packet/transport,
+and 17 native-server tests. The earlier 73-test suite also passed
+on Node.js 22.23.4; the two added cases exercise the hardware-probe script against
+a synthetic radio, without changing the service implementation. ESLint and syntax checks passed. `npm audit` reported
 zero vulnerabilities, including development tooling. A minimatch override pins
 11.0.5 to address GHSA-g3hv-75wg-m249 in the development dependency tree.
 
@@ -148,5 +149,6 @@ uses the normal runtime environment/password file and refuses to start without
 audio/scope observation; it does not retune or change modulation routing. Add
 `--tx --dummy-load` only after independently establishing load readiness for a
 brief PTT ownership/disconnect check. It cannot measure RF output or establish
-firmware version from those protocol checks. This probe has been syntax/guard
-tested, not run against physical hardware.
+firmware version from those protocol checks. This probe has been syntax/guard tested and both its receive/control and PTT
+procedures passed end-to-end tests against the independent synthetic radio. It
+has not been run against physical hardware.

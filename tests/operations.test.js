@@ -126,3 +126,44 @@ test('hardware probe requires explicit availability before reading config or ope
     assert.equal(tx.status, 1);
     assert.match(tx.stderr, /dummy-load/);
 });
+
+for (const tx of [false, true]) {
+    test(`opt-in hardware probe completes ${tx ? 'dummy-load PTT' : 'receive/control'} procedure against synthetic radio`, async (t) => {
+        // Both modes target independently encoded localhost UDP fixtures.
+        // --dummy-load here is synthetic test input, never hardware readiness.
+        const radio = await new IcomPeer({ passwordVector: Buffer.from('223f5c31223f583b0000000000000000', 'hex') }).start();
+        const address = radio.config();
+        const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('ICOM_')));
+        Object.assign(env, { ICOM_RADIO_HOST: '127.0.0.1', ICOM_USERNAME: 'beer', ICOM_PASSWORD: 'testpass',
+            ICOM_RADIO_CONTROL_PORT: String(address.controlPort), ICOM_RADIO_CIV_PORT: String(address.civPort),
+            ICOM_RADIO_AUDIO_PORT: String(address.audioPort) });
+        const args = ['scripts/hardware-smoke.js', '--run', '--radio-available'];
+        if (tx) args.push('--tx', '--dummy-load');
+        const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '', stderr = '', exited = false, exitCode;
+        child.stdout.on('data', (bytes) => { stdout += bytes.toString(); });
+        child.stderr.on('data', (bytes) => { stderr += bytes.toString(); });
+        const exit = new Promise((resolve) => child.once('exit', (code) => { exited = true; exitCode = code; resolve(); }));
+        const media = setInterval(() => {
+            if (radio.associations.audio) radio.rxAudio(Buffer.alloc(1920));
+            if (radio.associations.civ) radio.scope();
+        }, 20);
+        t.after(async () => {
+            clearInterval(media);
+            if (!exited) { child.kill('SIGKILL'); await exit; }
+            await radio.close();
+        });
+        await until(() => exited, 'hardware probe against synthetic radio', 10000);
+        assert.equal(exitCode, 0, stderr);
+        const result = JSON.parse(stdout);
+        assert.equal(result.result, 'pass');
+        assert.equal(result.clients, 2);
+        assert.ok(result.audioBytes.every((n) => n > 0));
+        assert.ok(result.scopeFrames.every((n) => n > 0));
+        assert.equal(radio.connections.control, 1);
+        assert.equal(radio.ptt, false, 'probe exits with simulated radio in receive');
+        assert.equal(radio.commands.some((f) => f[4] === 0x1c && f[5] === 0 && f[6] === 1), tx);
+        assert.equal(result.pttOwnershipTest.startsWith('passed'), tx);
+        assert.equal(stdout.includes('testpass') || stderr.includes('testpass'), false);
+    });
+}
