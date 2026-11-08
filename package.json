@@ -26,12 +26,18 @@
     "test": "node --test tests/*.test.js",
     "check": "node scripts/check.js",
     "test:capacity": "node scripts/benchmark.js",
-    "lint": "eslint src tests scripts eslint.config.cjs",
+    "lint": "eslint src tests scripts desktop eslint.config.cjs",
     "release:build": "node scripts/release-build.js",
-    "release:smoke": "node scripts/release-smoke.js"
+    "release:smoke": "node scripts/release-smoke.js",
+    "desktop:install": "node node_modules/electron/install.js",
+    "desktop:start": "electron desktop/main.js",
+    "desktop:build": "node scripts/desktop-build.js",
+    "desktop:smoke": "node scripts/desktop-installed-smoke.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0",
     "eslint": "10.14.0",
     "globals": "17.14.0"
   },

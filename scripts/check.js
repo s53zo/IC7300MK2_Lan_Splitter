@@ -13,5 +13,5 @@ function walk(dir) {
     }
   }
 }
-for (const dir of ['src', 'tests', 'scripts']) walk(dir);
+for (const dir of ['src', 'tests', 'scripts', 'desktop']) walk(dir);
 process.exitCode = failed ? 1 : 0;

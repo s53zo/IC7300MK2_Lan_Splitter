@@ -5,7 +5,37 @@ These executables include Node.js; no separate Node.js installation or `npm inst
 is needed. Draft releases are visible only to repository collaborators. Preview
 drafts are test builds from a specific commit, not published stable versions.
 
-## Choose an archive
+## Desktop installers and Linux terminal interface
+
+For normal Windows/Mac use, download **`…-win32-x64-Setup.exe`**,
+**`…-darwin-x64.dmg`** (Intel Mac), or **`…-darwin-arm64.dmg`** (Apple Silicon).
+These include the graphical application and runtime. Follow the
+[installation and interface guide](interfaces.md); no terminal setup is needed.
+Windows adds a Start menu shortcut, and the Mac disk image provides a drag-to-
+Applications shortcut. Linux `.tar.gz` executables open the keyboard interface
+when launched interactively; `--tui` selects it explicitly.
+
+Desktop uses pinned Electron 45.2.3 and electron-builder 26.18.0. Windows x64
+requires a vendor-supported Windows 10/Server 2016 or newer; Mac builds declare
+macOS 13.5 minimum. Native runners validate current OS versions, not every older
+supported release. Password protection uses DPAPI/Keychain-backed encryption on
+desktop; Linux TUI stores a separate owner-only, unencrypted file. Screens and
+reports describe the actual mechanism rather than promising universal encryption.
+
+The release workflow installs the real Windows installer and launches that app;
+on each Mac it mounts the DMG, copies and verifies the app, and launches it.
+Packaged GUI tests exercise real native credential storage and synthetic LAN
+sessions and capture screenshots. Native Linux PTY tests check the keyboard
+interface and terminal restoration. All network fixtures use loopback; the live
+radio and installed production service are not involved.
+
+Every installer, archive and source download is listed in `SHA256SUMS`. Desktop
+applications contain app and transport licenses plus complete Electron/Chromium
+notices (including embedded Node notices). The source archive contains the exact
+build scripts, lockfile and workflow. The separate headless bundles below use
+Node SEA and include `NODE-LICENSE`.
+
+## Optional headless archives
 
 Archive names follow `icom-lan-splitter-<version>-<platform>-<arch>`:
 
@@ -103,7 +133,7 @@ Keep secrets out of command arguments, release archives and source control.
 
 ## Prepare a release
 
-The [release workflow](../.github/workflows/release.yml) builds five native targets.
+The [release workflow](../.github/workflows/release.yml) builds five native standalone targets and three native desktop installers.
 Linux ARM64 uses a native ARM runner, and Intel/Apple Silicon macOS use separate
 runners. Runner availability and architecture labels are documented by
 [GitHub](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).

@@ -239,3 +239,32 @@ cancellation before/after dispatch and queue latency crossing 350 ms.
 No TTL or audio-path changes are included. More complex sharing across a future
 queued write remains conditional on measured opportunities after getter fixes.
 No physical transmission tests were performed for this follow-up.
+
+## Local graphical and terminal interfaces
+
+The local controller and interfaces have separate regressions for all public
+settings, protected persistence and credential adapter failures, autostart,
+active versus pending settings, canceled/unreachable startup, duplicate endpoint
+ownership and TX close/reconnect gates (owner, observed, pending and queued TX).
+Fake-clock checks conserve counters and rates across same-millisecond events,
+stop/reconnect and bounded 15-minute history. Existing heartbeat echoes supply
+measured ping without extra radio probes. Missing/stale timings remain unavailable.
+
+Native synthetic integration uses two clients to verify private addressed/cache
+replies, exact audio/scope fanout, one upstream session and confirmed TX release.
+A real PTY test navigates the terminal UI, edits masked fields, rejects invalid
+settings, exports a protected redacted report and checks termios/cursor/process
+restoration. Desktop smoke uses the actual OS credential encryption APIs and
+interacts with the renderer, including canceled reconnect/close and confirmed
+close. It captures every screen, first-run errors and 640px layouts.
+
+The release workflow gates draft assembly on native standalone and installed
+Windows/macOS tests. Windows tests silently install into an isolated directory
+and check a Start menu shortcut; Mac tests mount the DMG, copy its app, verify
+its ad-hoc signature and launch that copied application. No physical radio or
+production deployment is involved. Current-run links and exact result counts
+are recorded in the release report; these tests do not validate RF, audible
+playback, every older OS, or Gatekeeper/SmartScreen approval under download
+quarantine. Desktop software remains unsigned on Windows and not notarized on Mac.
+
+See [interface screenshots](screenshots/README.md) and [user guide](interfaces.md).

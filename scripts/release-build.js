@@ -35,7 +35,7 @@ function bundle(root = ROOT) {
     visit('src/cli.js');
     const definitions = [...modules].sort(([a], [b]) => a.localeCompare(b)).map(([id, value]) =>
         `${JSON.stringify(id)}: [function(require,module,exports) {\n${value.source}\n}, ${JSON.stringify(value.dependencies)}]`).join(',\n');
-    return `'use strict';\nconst nativeRequire = require;\nconst definitions = {${definitions}};\nconst loaded = {};\nfunction load(id) {\n if (loaded[id]) return loaded[id].exports;\n const [factory, deps] = definitions[id];\n const mod = loaded[id] = { exports: {} };\n const localRequire = (name) => Object.hasOwn(deps,name) ? load(deps[name]) : nativeRequire(name);\n factory(localRequire,mod,mod.exports);\n return mod.exports;\n}\nload('src/cli.js').main().catch((error) => { process.stderr.write(error.message + '\\n'); process.exitCode = 1; });\n`;
+    return `'use strict';\nconst nativeRequire = require;\nconst definitions = {${definitions}};\nconst loaded = {};\nfunction load(id) {\n if (loaded[id]) return loaded[id].exports;\n const [factory, deps] = definitions[id];\n const mod = loaded[id] = { exports: {} };\n const localRequire = (name) => Object.hasOwn(deps,name) ? load(deps[name]) : nativeRequire(name);\n factory(localRequire,mod,mod.exports);\n return mod.exports;\n}\nload('src/cli.js').main({ interactiveDefault: process.platform === 'linux' }).catch((error) => { process.stderr.write(error.message + '\\n'); process.exitCode = 1; });\n`;
 }
 async function main() {
     if (process.versions.node !== NODE_VERSION) throw new Error(`Build requires Node ${NODE_VERSION}`);
@@ -60,7 +60,7 @@ async function main() {
         run('codesign', ['--sign', '-', '--force', executable]);
         run('codesign', ['--verify', '--strict', executable]);
     }
-    for (const file of ['LICENSE', 'NOTICE.md', 'docs/releases.md', 'docs/operations.md', 'third_party/icom-lan/GPL-3.0.txt']) {
+    for (const file of ['LICENSE', 'NOTICE.md', 'docs/releases.md', 'docs/interfaces.md', 'docs/operations.md', 'third_party/icom-lan/GPL-3.0.txt']) {
         const dest = path.join(stage, file); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(path.join(ROOT, file), dest);
     }
     const response = await fetch(`https://raw.githubusercontent.com/nodejs/node/v${NODE_VERSION}/LICENSE`);
@@ -73,7 +73,9 @@ async function main() {
         runtimeSource: `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}.tar.gz`,
         signing: process.platform === 'darwin' ? 'ad-hoc only; not notarized' : 'unsigned',
     }, null, 2) + '\n');
-    fs.writeFileSync(path.join(stage, 'README.txt'), `IC-7300MK2 LAN Splitter ${label} (${target})\n\nRun ${path.basename(executable)} --help. No Node.js installation is required.\nSee docs/releases.md for platform and launch instructions; docs/operations.md\ncontains environment configuration. Never put passwords in command arguments.\nThis is an unsigned development release (macOS: ad-hoc signed, not notarized).\nCorresponding source commit: ${commit}\n`);
+    fs.writeFileSync(path.join(stage, 'README.txt'), `IC-7300MK2 LAN Splitter ${label} (${target})\n\nLinux: launch in a terminal for the keyboard interface, or use --tui.
+Use --headless for the environment-configured service.
+Run ${path.basename(executable)} --help for options. No Node.js installation is required.\nSee docs/releases.md for platform and launch instructions; docs/operations.md\ncontains environment configuration. Never put passwords in command arguments.\nThis is an unsigned development release (macOS: ad-hoc signed, not notarized).\nCorresponding source commit: ${commit}\n`);
     fs.mkdirSync(path.join(ROOT, 'dist'), { recursive: true });
     const archive = path.join(ROOT, 'dist', `${name}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`);
     await require('./release-archive').packageArchive(stage, archive, epoch);

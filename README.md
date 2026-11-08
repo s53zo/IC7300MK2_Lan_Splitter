@@ -11,7 +11,37 @@ UI, rigctld, TCI, or virtual serial/audio devices. The implemented audio format 
 explicitly rejected. General native-client compatibility is the goal; see the
 [validation matrix](docs/validation.md) for what has actually been tested.
 
-## Run
+## Install the app
+
+Open **[Releases](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases)** and expand **Assets**:
+
+| Computer | Download | Installation |
+| --- | --- | --- |
+| Windows x64 | `…-win32-x64-Setup.exe` | Run Setup, then open **Icom LAN Splitter** from Start |
+| Mac Apple Silicon | `…-darwin-arm64.dmg` | Drag the app into Applications |
+| Mac Intel | `…-darwin-x64.dmg` | Drag the app into Applications |
+| Linux x64 / ARM64 | `…-linux-x64.tar.gz` / `…-linux-arm64.tar.gz` | Extract and run `./icom-lan-splitter` in a terminal |
+
+On first launch, enter the radio address, username and password, then choose
+**Save & connect**. Later launches use your saved settings automatically. No
+separate Node.js installation, configuration scripts or terminal commands are
+needed on Windows/Mac. Linux opens a keyboard-operated interface.
+
+The local interface must stay open: closing stops its splitter, with confirmation
+during transmission. Dashboard, Clients, Cache, Settings and Diagnostics show
+connection health and measured timing. Settings are saved locally; password
+protection uses the OS vault on desktop and an explicitly unencrypted owner-only
+file on Linux. History stays in memory for at most 15 minutes.
+
+See **[installation and interface guide](docs/interfaces.md)** for setup,
+configuration locations, credentials and keyboard controls. Downloads are
+unsigned on Windows and ad-hoc signed, without notarization, on Mac; see
+[release instructions](docs/releases.md). Drafts are visible to collaborators
+until a maintainer publishes them. Optional headless bundles remain available.
+
+![Desktop dashboard with synthetic radio test data](docs/screenshots/dashboard.png)
+
+## Headless/source usage
 
 Install Node.js 22 or newer, then clone or download this repository. There are
 no runtime package dependencies and no compile step. Run commands from the
@@ -106,6 +136,3 @@ test fixtures required by that command.
 - [Manuals, related projects, and source provenance](docs/research.md)
 
 AGPL-3.0-only; see [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).
-
-Standalone executables for Windows x64, Intel/Apple Silicon macOS and Linux x64/ARM64
-are prepared by GitHub Actions. See [downloads and release instructions](docs/releases.md).

@@ -66,13 +66,65 @@ jobs:
           EXE_PATH: ${{ steps.build.outputs.executable }}
         run: node scripts/release-smoke.js --executable "$EXE_PATH"
         shell: bash
+      - name: Smoke test terminal interface in a real PTY
+        if: matrix.platform == 'linux'
+        env:
+          EXE_PATH: ${{ steps.build.outputs.executable }}
+        run: python3 scripts/tui-smoke.py --executable "$EXE_PATH"
       - uses: actions/upload-artifact@v4
         with:
           name: executable-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
+  desktop:
+    needs: metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            platform: win32
+            arch: x64
+          - runner: macos-15-intel
+            platform: darwin
+            arch: x64
+          - runner: macos-15
+            platform: darwin
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_LABEL: ${{ needs.metadata.outputs.label }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      EXPECTED_PLATFORM: ${{ matrix.platform }}
+      EXPECTED_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '26.13.0'
+          architecture: ${{ matrix.arch }}
+      - name: Verify native architecture
+        run: node -e "if(process.platform!==process.env.EXPECTED_PLATFORM || process.arch!==process.env.EXPECTED_ARCH) process.exit(1)"
+      - run: npm ci
+      - run: npm run desktop:install
+      - run: npm run lint
+      - run: npm run check
+      - run: npm test
+      - run: npm run desktop:build
+      - run: npm run desktop:smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-screens-${{ matrix.platform }}-${{ matrix.arch }}
+          path: .release/screenshots/**
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: executable-desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
   draft:
-    needs: [metadata, build]
+    needs: [metadata, build, desktop]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

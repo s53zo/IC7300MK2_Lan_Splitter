@@ -12,7 +12,8 @@ async function main() {
     if (process.env.GITHUB_SHA !== commit) throw new Error('Checkout mismatch');
     const meta = metadata(process.env.GITHUB_EVENT_NAME, process.env.GITHUB_REF, commit, require('../package.json').version);
     const directory = path.resolve('dist');
-    const expected = ['win32-x64.zip', 'darwin-x64.tar.gz', 'darwin-arm64.tar.gz', 'linux-x64.tar.gz', 'linux-arm64.tar.gz']
+    const expected = ['win32-x64.zip', 'darwin-x64.tar.gz', 'darwin-arm64.tar.gz', 'linux-x64.tar.gz', 'linux-arm64.tar.gz',
+        'win32-x64-Setup.exe', 'darwin-x64.dmg', 'darwin-arm64.dmg']
         .map((target) => `icom-lan-splitter-${meta.label}-${target}`);
     for (const name of expected) if (!fs.statSync(path.join(directory, name)).isFile()) throw new Error(`Missing ${name}`);
     const source = `icom-lan-splitter-${meta.label}-source.tar.gz`;
@@ -32,7 +33,7 @@ async function main() {
     const release = await api(`${base}/releases`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         tag_name: meta.tag, target_commitish: commit, name: `IC-7300MK2 LAN Splitter ${meta.label}`, draft: true,
         prerelease: meta.prerelease, make_latest: 'false',
-        body: `Standalone executables built from ${commit}.\n\nAll five native targets passed the full suite and extracted-executable synthetic LAN smoke tests.\n\nNo Node.js installation required. Windows is unsigned; macOS is ad-hoc signed and not notarized. See docs/releases.md in each archive for OS requirements and configuration.\n\nThe source archive contains corresponding application source and build scripts. NODE-LICENSE includes embedded runtime notices; BUILD.json identifies the runtime source.\n\nSHA-256 checksums:\n\n\`\`\`text\n${hashes}\`\`\`\n`,
+        body: `Desktop and terminal interfaces built from ${commit}.\n\nNative Windows installer and Intel/Apple Silicon Mac apps, plus Linux terminal executables, passed platform tests and synthetic LAN smoke tests. Optional headless bundles are included.\n\nNo Node.js installation required. Windows is unsigned; macOS is ad-hoc signed and not notarized. Use Setup.exe on Windows, drag the Mac app from its DMG into Applications, or run the Linux executable in a terminal. See docs/interfaces.md in the corresponding source for setup, settings and protection details.\n\nThe source archive contains corresponding application source and build scripts. SEA bundles include NODE-LICENSE and runtime source metadata. Desktop apps include complete Electron/Chromium notices and Electron version metadata.\n\nSHA-256 checksums:\n\n\`\`\`text\n${hashes}\`\`\`\n`,
     }) });
     for (const name of [...names, 'SHA256SUMS']) {
         await api(`${release.upload_url.split('{')[0]}?name=${encodeURIComponent(name)}`, { method: 'POST',
