@@ -151,7 +151,8 @@ archives, checksums and source commit before any manual publication.
 
 For a versioned release, update `package.json` and the lockfile consistently,
 commit and validate the change, then push an explicitly chosen `v<package.version>`
-tag. A mismatching tag fails validation. Tag builds also prepare drafts; they do
+tag. For a patch-zero version, the shorter tag is also accepted: `v0.8` matches
+`package.json` version `0.8.0`. Any other mismatch fails validation. Tag builds also prepare drafts; they do
 not automatically publish. Publishing requires a separate maintainer action.
 Never move an existing published version tag or replace its binaries silently.
 

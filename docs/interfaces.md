@@ -1,5 +1,7 @@
 # Install, connect and monitor
 
+**[Download the latest release](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/latest)**
+
 The desktop app is the easiest way to run the splitter on Windows or Mac. Linux
 has a keyboard-operated terminal interface. Each interface controls the splitter
 on **that computer**; it is not a remote control panel for another server.

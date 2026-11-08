@@ -15,6 +15,9 @@ test('release tags must match package version and previews identify the exact co
     });
     assert.equal(metadata('push', 'refs/tags/v0.1.0', sha, '0.1.0').prerelease, false);
     assert.equal(metadata('push', 'refs/tags/v0.1.0-rc.1', sha, '0.1.0-rc.1').prerelease, true);
+    assert.deepEqual(metadata('push', 'refs/tags/v0.8', sha, '0.8.0'), { label: '0.8.0', tag: 'v0.8', prerelease: false, commit: sha });
+    assert.throws(() => metadata('push', 'refs/tags/v0.8', sha, '0.8.1'), /tag/);
+    assert.throws(() => metadata('push', 'refs/tags/v0.8', sha, '0.8.0-rc.0'), /tag/);
     for (const ref of ['refs/heads/main', 'refs/tags/v0.2.0', 'refs/tags/0.1.0']) {
         assert.throws(() => metadata('push', ref, sha, '0.1.0'), /tag/);
     }

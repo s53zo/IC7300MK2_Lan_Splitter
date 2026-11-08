@@ -1,5 +1,7 @@
 # IC-7300MK2 LAN Splitter
 
+**[Download v0.8](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/latest)** · [Installation guide](docs/interfaces.md)
+
 Share one IC-7300MK2 LAN connection between multiple native Icom LAN clients.
 The service connects to the radio once; clients connect to the service's address
 instead of the radio's address. Audio, spectrum/waterfall and radio state are
@@ -13,14 +15,15 @@ explicitly rejected. General native-client compatibility is the goal; see the
 
 ## Install the app
 
-Open **[Releases](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases)** and expand **Assets**:
+**[Download v0.8 — installers and executables](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/latest)**
 
 | Computer | Download | Installation |
 | --- | --- | --- |
-| Windows x64 | `…-win32-x64-Setup.exe` | Run Setup, then open **Icom LAN Splitter** from Start |
-| Mac Apple Silicon | `…-darwin-arm64.dmg` | Drag the app into Applications |
-| Mac Intel | `…-darwin-x64.dmg` | Drag the app into Applications |
-| Linux x64 / ARM64 | `…-linux-x64.tar.gz` / `…-linux-arm64.tar.gz` | Extract and run `./icom-lan-splitter` in a terminal |
+| Windows x64 | [Windows installer](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8/icom-lan-splitter-0.8.0-win32-x64-Setup.exe) | Run Setup, then open **Icom LAN Splitter** from Start |
+| Mac Apple Silicon | [Mac download — M-series](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8/icom-lan-splitter-0.8.0-darwin-arm64.dmg) | Drag the app into Applications |
+| Mac Intel | [Mac download — Intel](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8/icom-lan-splitter-0.8.0-darwin-x64.dmg) | Drag the app into Applications |
+| Linux x64 | [Linux download — Intel/AMD](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8/icom-lan-splitter-0.8.0-linux-x64.tar.gz) | Extract and run `./icom-lan-splitter` in a terminal |
+| Linux ARM64 | [Linux download — ARM64](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8/icom-lan-splitter-0.8.0-linux-arm64.tar.gz) | Extract and run `./icom-lan-splitter` in a terminal |
 
 On first launch, enter the radio address, username and password, then choose
 **Save & connect**. Later launches use your saved settings automatically. No
