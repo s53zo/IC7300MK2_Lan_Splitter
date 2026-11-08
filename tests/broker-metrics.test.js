@@ -123,3 +123,15 @@ test('miss and invalidation reasons remain bounded and never include reply value
     assert.equal(serialized.includes('fefe'), false);
     assert.deepEqual(Object.keys(m.byQuery).sort(), ['04', '1502', '1c00']);
 });
+
+
+test('query-disabled telemetry does not misreport a disabled family or suppress fresh safety reads', async (t) => {
+    const x = await setup(t, { cacheQueryTtls: { '1c00': 0 } });
+    const before = x.broker.metricsSnapshot();
+    x.broker.poll(); await tick();
+    const after = x.broker.metricsSnapshot();
+    assert.equal(after.physical.periodicPoll - before.physical.periodicPoll, 1);
+    assert.equal(after.reasons.storeSkips.query_disabled - before.reasons.storeSkips.query_disabled, 1);
+    assert.equal(after.reasons.storeSkips.family_disabled, 0);
+    assert.equal(x.broker.cacheSnapshot().querySettings.find((row) => row.key === '1c00').effectiveMs, 0);
+});

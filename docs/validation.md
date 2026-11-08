@@ -268,3 +268,19 @@ playback, every older OS, or Gatekeeper/SmartScreen approval under download
 quarantine. Desktop software remains unsigned on Windows and not notarized on Mac.
 
 See [interface screenshots](screenshots/README.md) and [user guide](interfaces.md).
+
+## Per-query cache lifetimes
+
+Independent policy/config/broker tests verify blank inheritance, zero disable,
+independent expiry, global disable precedence and positive overrides over a
+zero family default. Only the original reviewed query shapes remain configurable;
+setters, unknown reads and credential-bearing menu queries are rejected. Tests
+retain private addressed coalescing, mutation and generation barriers, and fresh
+internal safety polling. Legacy settings load all new overrides as inherited.
+
+The native GUI fixture tests save and apply zero, clear back to family defaults,
+and persist a 200 ms S-meter override without changing other query lifetimes.
+It checks actual physical radio-read counts as well as displayed active values
+and pending configuration. Terminal and protected-store tests cover editing,
+clearing, validation and persistence. Active lifetime columns accompany existing
+session-total hit counters; changing lifetimes does not erase earlier counts.

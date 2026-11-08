@@ -33,7 +33,10 @@ Optional:
   ICOM_CACHE_STATE_MS     RX/TX and tuner TTL; default 100
   ICOM_CACHE_SETTINGS_MS  Public operator settings TTL; default 250
   ICOM_CACHE_TUNING_MS    Frequency/mode/VFO TTL; default 50
-                         TTLs are integer milliseconds 0–1000; 0 disables family
+                         Family defaults; integer milliseconds 0–1000
+  ICOM_CACHE_QUERY_<HEX>_MS Override one supported read, e.g. ICOM_CACHE_QUERY_1502_MS=200
+                         Blank inherits family; 0 disables this query; range 0–1000
+                         Global cache switch overrides all; internal safety reads stay fresh
 
 Use a LAN interface address to accept other computers. No web UI or TCP API.
 Do not put passwords in command arguments or committed configuration files.

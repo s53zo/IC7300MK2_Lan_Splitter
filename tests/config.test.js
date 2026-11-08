@@ -117,3 +117,18 @@ test('status aggregates native client states without logging their identities', 
     assert.deepEqual(result.metrics, { physicalTotal: 3 });
     assert.ok(!JSON.stringify(result).includes('private-'));
 });
+
+test('per-command cache environment settings inherit blanks and normalize strict known query keys', () => {
+    assert.deepEqual(config(defaults).broker.cacheQueryTtls, {});
+    assert.deepEqual(config({ ...defaults, ICOM_CACHE_QUERY_1502_MS: '200', ICOM_CACHE_QUERY_1511_MS: '0',
+        ICOM_CACHE_QUERY_1C00_MS: '1000', ICOM_CACHE_QUERY_1512_MS: '', ICOM_CACHE_QUERY_1513_MS: undefined }).broker.cacheQueryTtls,
+    { '1502': 200, '1511': 0, '1c00': 1000 });
+    for (const value of ['-1', '1001', '1.5', ' 100', 'NaN', null, true]) {
+        assert.throws(() => config({ ...defaults, ICOM_CACHE_QUERY_1502_MS: value }));
+    }
+    for (const key of ['ICOM_CACHE_QUERY_1502', 'ICOM_CACHE_QUERY_1502_SECONDS', 'ICOM_CACHE_QUERY_1c00_MS',
+        'ICOM_CACHE_QUERY1502_MS', 'ICOM_CACHE_QUERY_1C0001_MS', 'ICOM_CACHE_QUERY_1200_MS', 'ICOM_CACHE_QUERY_1A050014_MS',
+        'ICOM_CACHE_QUERY_FF_MS', 'ICOM_CACHE_QUERY_ABC_MS']) {
+        for (const value of ['', '100']) assert.throws(() => config({ ...defaults, [key]: value }), undefined, key);
+    }
+});

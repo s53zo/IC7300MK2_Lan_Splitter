@@ -2,7 +2,7 @@
 
 // SPDX-License-Identifier: AGPL-3.0-only
 const { EventEmitter } = require('node:events');
-const { policyFor, validReply } = require('./read-cache');
+const { policyFor, validReply, validateQueryTtls, cacheQuerySettings } = require('./read-cache');
 const { BrokerMetrics } = require('./metrics');
 
 const PREAMBLE = Buffer.from([0xfe, 0xfe]);
@@ -70,7 +70,7 @@ class Broker extends EventEmitter {
     this.session = session;
     this.server = server;
     this.explicitAddress = options.address !== undefined;
-    this.options = { address: 0xb6, requestTimeoutMs: 2000, maxQueued: 1024, maxPerClient: 64, pollMs: 250, autoStartGraceMs: 1000, cacheEnabled: true, cacheMetersMs: 100, cacheStateMs: 100, cacheSettingsMs: 250, cacheTuningMs: 50, maxCacheEntries: 128, now: () => performance.now(), ...options };
+    this.options = { address: 0xb6, requestTimeoutMs: 2000, maxQueued: 1024, maxPerClient: 64, pollMs: 250, autoStartGraceMs: 1000, cacheEnabled: true, cacheMetersMs: 100, cacheStateMs: 100, cacheSettingsMs: 250, cacheTuningMs: 50, cacheQueryTtls: {}, maxCacheEntries: 128, now: () => performance.now(), ...options };
     for (const key of ['maxQueued', 'maxPerClient', 'maxCacheEntries']) {
       if (!Number.isSafeInteger(this.options[key]) || this.options[key] < 1) throw new Error(`Invalid broker ${key}`);
     }
@@ -78,6 +78,7 @@ class Broker extends EventEmitter {
       if (!Number.isSafeInteger(this.options[key]) || this.options[key] < 0 || this.options[key] > 1000) throw new Error(`Invalid broker ${key}`);
     }
     if (typeof this.options.cacheEnabled !== 'boolean' || typeof this.options.now !== 'function') throw new Error('Invalid read-cache options');
+    this.options.cacheQueryTtls = validateQueryTtls(this.options.cacheQueryTtls);
     this.metrics = new BrokerMetrics(this.options.now);
     this.coherenceEpoch = 0;
     this.readCache = new Map();
@@ -115,7 +116,7 @@ class Broker extends EventEmitter {
 
   cacheSnapshot() {
     return { ttlMs: { meters: this.options.cacheMetersMs, state: this.options.cacheStateMs, settings: this.options.cacheSettingsMs, tuning: this.options.cacheTuningMs }, enabled: this.options.cacheEnabled, entries: this.readCache.size, epoch: this.cacheEpoch,
-      ...this.cacheStats, byQuery: Object.fromEntries([...this.cacheByQuery].map(([key, value]) => [key, { ...value }])) };
+      ...this.cacheStats, querySettings: cacheQuerySettings(this.options), byQuery: Object.fromEntries([...this.cacheByQuery].map(([key, value]) => [key, { ...value }])) };
   }
 
   metricsSnapshot() {
@@ -175,7 +176,8 @@ class Broker extends EventEmitter {
     const policy = item.cachePolicy || this.cachePolicy(item.bytes);
     if (!policy) {
       const known = policyFor(item.bytes);
-      this.metrics.reason('storeSkips', !this.options.cacheEnabled ? 'disabled' : known ? 'family_disabled' : 'unknown_query', known);
+      this.metrics.reason('storeSkips', !this.options.cacheEnabled ? 'disabled' : known
+        ? this.options.cacheQueryTtls[known.key] === 0 ? 'query_disabled' : 'family_disabled' : 'unknown_query', known);
       return;
     }
     if (!this.ready || this.synchronizing || this.releasing || this.stopRequested) {

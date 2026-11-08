@@ -1,6 +1,8 @@
 'use strict';
 const fs = require('node:fs');
 const { config } = require('../config');
+const { queryCatalog } = require('../read-cache');
+const familyLabels = { meters: 'Meter / ADC', state: 'RX/TX / tuner', settings: 'Settings', tuning: 'Frequency / mode' };
 const FIELDS = [
     ['ICOM_RADIO_HOST', 'Radio address', 'Radio', 'text', '', 'IPv4 address of your radio.'],
     ['ICOM_USERNAME', 'Radio username', 'Radio', 'text', '', 'The username configured on your radio.'],
@@ -14,17 +16,22 @@ const FIELDS = [
     ['ICOM_RADIO_CIV_PORT', 'Radio CI-V port', 'Network', 'number', '50002', 'Radio command UDP port.', 1, 65535],
     ['ICOM_RADIO_AUDIO_PORT', 'Radio audio port', 'Network', 'number', '50003', 'Radio audio UDP port.', 1, 65535],
     ['ICOM_CACHE_ENABLED', 'Enable request cache', 'Cache', 'boolean', '1', 'Serve eligible recent display queries locally. Safety polling always stays fresh.'],
-    ['ICOM_CACHE_METERS_MS', 'Meter / ADC cache (ms)', 'Cache', 'number', '100', '0 disables this family; maximum 1000 ms.', 0, 1000],
-    ['ICOM_CACHE_STATE_MS', 'RX/TX / tuner cache (ms)', 'Cache', 'number', '100', 'Client display cache only; 0 disables this family.', 0, 1000],
-    ['ICOM_CACHE_SETTINGS_MS', 'Settings cache (ms)', 'Cache', 'number', '250', '0 disables this family; maximum 1000 ms.', 0, 1000],
-    ['ICOM_CACHE_TUNING_MS', 'Frequency / mode cache (ms)', 'Cache', 'number', '50', '0 disables this family; maximum 1000 ms.', 0, 1000],
+    ['ICOM_CACHE_METERS_MS', 'Meter / ADC cache (ms)', 'Cache', 'number', '100', 'Family default; 0 disables inherited queries. Per-command overrides take priority; maximum 1000 ms.', 0, 1000],
+    ['ICOM_CACHE_STATE_MS', 'RX/TX / tuner cache (ms)', 'Cache', 'number', '100', 'Client display default; 0 disables inherited queries. Per-command overrides take priority; safety reads stay fresh.', 0, 1000],
+    ['ICOM_CACHE_SETTINGS_MS', 'Settings cache (ms)', 'Cache', 'number', '250', 'Family default; 0 disables inherited queries. Per-command overrides take priority; maximum 1000 ms.', 0, 1000],
+    ['ICOM_CACHE_TUNING_MS', 'Frequency / mode cache (ms)', 'Cache', 'number', '50', 'Family default; 0 disables inherited queries. Per-command overrides take priority; maximum 1000 ms.', 0, 1000],
     ['ICOM_MEMORY_BUDGET_MB', 'Client memory budget (MiB)', 'Advanced', 'number', '128', 'Reserved client buffer budget, not an arbitrary license limit.', 8, 65536],
     ['ICOM_PREAUTH_MEMORY_MB', 'Pending login budget (MiB)', 'Advanced', 'number', '8', 'Separate bounded memory budget for clients not yet authenticated.', 1, 65536],
     ['ICOM_PREAUTH_TIMEOUT_MS', 'Login deadline (ms)', 'Advanced', 'number', '10000', 'Absolute deadline to complete client authentication.', 100, 300000],
     ['ICOM_CLIENT_TIMEOUT_MS', 'Client heartbeat timeout (ms)', 'Advanced', 'number', '15000', 'Disconnect an unresponsive client after this interval.', 100, 300000],
     ['ICOM_RADIO_TIMEOUT_MS', 'Radio heartbeat timeout (ms)', 'Advanced', 'number', '15000', 'Detect loss of the radio connection after this interval.', 100, 300000],
     ['ICOM_COMMAND_TIMEOUT_MS', 'Command reply timeout (ms)', 'Advanced', 'number', '2000', 'Reset an ambiguous radio session if a command reply fails to arrive.', 100, 30000],
-].map(([key, label, group, type, fallback, description, min, max]) => ({ key, label, group, type, default: fallback, description, ...(min === undefined ? {} : { min, max }) }));
+].map(([key, label, group, type, fallback, description, min, max]) => ({ key, label, group, type, default: fallback, description, ...(min === undefined ? {} : { min, max }) })).concat(queryCatalog().map((query) => ({
+    key: `ICOM_CACHE_QUERY_${query.key.toUpperCase()}_MS`, label: `${query.label} (${query.key.toUpperCase()})`,
+    group: 'Per-command cache', type: 'optional-number', default: '', min: 0, max: 1000,
+    cacheQuery: query.key, category: query.category, placeholder: 'Use family default',
+    description: `Blank uses the ${familyLabels[query.category]} family default. 0 disables this query; otherwise 1–1000 ms. Internal safety reads always stay fresh.`,
+})));
 const defaults = () => Object.fromEntries(FIELDS.map((field) => [field.key, field.default]));
 function normalize(input = {}, existing = defaults()) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Settings must be an object');
@@ -55,6 +62,10 @@ function validate(input, password = '', existing) {
         let message = error.message;
         for (const field of [...FIELDS].sort((a, b) => b.key.length - a.key.length)) message = message.split(field.key).join(field.label);
         throw new Error(message, { cause: error });
+    }
+    for (const field of FIELDS) if (field.cacheQuery) {
+        const ttl = options.broker.cacheQueryTtls[field.cacheQuery];
+        values[field.key] = ttl === undefined ? '' : String(ttl);
     }
     values.ICOM_PASSWORD = ''; values.ICOM_PASSWORD_FILE = '';
     return { values, password, options };

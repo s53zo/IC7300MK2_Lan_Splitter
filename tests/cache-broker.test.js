@@ -221,3 +221,55 @@ test('a fresh failed read invalidates an earlier successful display value', asyn
   radio.emit('civ', answer([0xfa])); await checking;
   assert.equal(broker.cacheSnapshot().entries, 0);
 });
+
+test('per-command expiry and disable leave sibling meter TTLs independent', async (t) => {
+  const { radio, broker, a, b, send, at } = await setup(t, { cacheQueryTtls: { '1502': 200, '1511': 0 } });
+  send(a, meter); await tick(); send(b, meter); await tick(); assert.equal(radio.commands.length, 1);
+  send(a, [0x15, 0x11]); await tick(); send(b, [0x15, 0x11]); await tick(); assert.equal(radio.commands.length, 3);
+  send(a, [0x15, 0x12]); await tick(); at(100); send(b, [0x15, 0x12]); await tick(); assert.equal(radio.commands.length, 5);
+  at(199); send(b, meter); await tick(); assert.equal(radio.commands.length, 5);
+  at(200); send(a, meter); await tick(); assert.equal(radio.commands.length, 6);
+  assert.equal(broker.cacheSnapshot().byQuery['1511'], undefined);
+  assert.equal(broker.cacheSnapshot().querySettings.find((entry) => entry.key === '1502').effectiveMs, 200);
+  assert.equal(broker.cacheSnapshot().querySettings.find((entry) => entry.key === '1511').effectiveMs, 0);
+});
+
+test('positive per-command overrides enable one disabled family query while global disable still wins', async (t) => {
+  for (const cacheEnabled of [true, false]) {
+    const { radio, broker, a, b, send } = await setup(t, { cacheEnabled, cacheMetersMs: 0, cacheQueryTtls: { '1502': 250 } });
+    send(a, meter); await tick(); send(b, meter); await tick();
+    assert.equal(radio.commands.length, cacheEnabled ? 1 : 2);
+    send(a, [0x15, 0x12]); await tick(); send(b, [0x15, 0x12]); await tick();
+    assert.equal(radio.commands.length, cacheEnabled ? 3 : 4);
+    if (!cacheEnabled) assert.ok(broker.cacheSnapshot().querySettings.every((entry) => entry.effectiveMs === 0));
+  }
+});
+
+test('overridden reads retain private in-flight coalescing and mutation barriers', async (t) => {
+  const { radio, server, broker, a, b, send, at } = await setup(t, { cacheQueryTtls: { '1502': 800 } }); radio.auto = false;
+  send(a, meter, 0xe1); send(b, meter, 0xe2); radio.respond();
+  assert.equal(radio.commands.length, 1); assert.deepEqual(server.sent.map((entry) => entry.bytes[2]), [0xe1, 0xe2]);
+  assert.equal(broker.cacheSnapshot().coalesced, 1);
+  at(200); send(a, meter); assert.equal(radio.commands.length, 1);
+  send(a, [0x14, 1, 0, 0x50]); send(b, meter);
+  radio.respond(); assert.equal(radio.commands.at(-1)[4], 0x15); radio.respond();
+  assert.equal(radio.commands.length, 3); assert.equal(broker.cacheSnapshot().hits, 2);
+});
+
+test('per-command state overrides never satisfy internal safety reads from cache', async (t) => {
+  const { radio, broker, a, send } = await setup(t, { cacheQueryTtls: { '1C00': 1000 } });
+  await broker.internal([0x1c, 0]); send(a, [0x1c, 0]); await tick();
+  assert.equal(radio.commands.length, 1); assert.equal(broker.cacheSnapshot().hits, 1);
+  await broker.internal([0x1c, 0]); assert.equal(radio.commands.length, 2);
+  radio.ptt = true; await broker.internal([0x1c, 0]); assert.equal(radio.commands.length, 3);
+  assert.equal(broker.observedTx, true); radio.ptt = false;
+});
+
+test('direct broker override options validate strictly and detach caller-owned maps', async (t) => {
+  for (const overrides of [null, [], { '1c0001': 1 }, { '1502': '200' }, { '1502': -1 }, { '1502': 1001 }, { '1502': 1.5 }, { '1c00': 1, '1C00': 2 }]) {
+    assert.throws(() => new Broker(new Radio(), new Server(), { cacheQueryTtls: overrides }));
+  }
+  const overrides = { '1C00': 75 };
+  const { broker } = await setup(t, { cacheQueryTtls: overrides }); overrides['1C00'] = 1;
+  assert.deepEqual(broker.options.cacheQueryTtls, { '1c00': 75 });
+});

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { policyFor, validReply } = require('../src/read-cache');
+const { policyFor, validReply, queryCatalog, validateQueryTtls, cacheQuerySettings } = require('../src/read-cache');
 const query = (hex, controller = 0xe0) => Buffer.concat([Buffer.from([0xfe, 0xfe, 0xb6, controller]), Buffer.from(hex, 'hex'), Buffer.from([0xfd])]);
 const reply = (hex, controller = 0xe0) => Buffer.concat([Buffer.from([0xfe, 0xfe, controller, 0xb6]), Buffer.from(hex, 'hex'), Buffer.from([0xfd])]);
 
@@ -77,4 +77,48 @@ test('successful replies require exact opcode, selector, length and canonical va
     assert.equal(validReply(query(q), reply(r, 0xe1)), true);
   }
   for (const [q, r] of [['1502', '15020256'], ['1507', '150702'], ['1c00', '1c0002'], ['1c01', '1c0103'], ['04', '040601'], ['04', '040100'], ['2600', '2601010101'], ['1401', '140100fa'], ['271900', '271900001002'], ['271500', '2715000000020000']]) assert.equal(validReply(query(q), reply(r)), false, r);
+});
+
+test('per-command TTLs inherit, disable or override a family without expanding the allowlist', () => {
+  const options = { cacheMetersMs: 123, cacheQueryTtls: validateQueryTtls({ '1502': 200, '1511': 0, '1512': '', '1C00': 75 }) };
+  assert.equal(policyFor(query('1502'), options).ttlMs, 200);
+  assert.equal(policyFor(query('1511'), options), null);
+  assert.equal(policyFor(query('1512'), options).ttlMs, 123);
+  assert.equal(policyFor(query('1c00'), options).ttlMs, 75);
+  assert.equal(policyFor(query('1502'), { ...options, cacheMetersMs: 0 }).ttlMs, 200);
+  assert.equal(policyFor(query('1502'), { ...options, cacheEnabled: false }), null);
+  assert.equal(policyFor(query('1502'), { cacheQueryTtls: { '1502': 1001 } }), null);
+  for (const key of ['1c0001', '14010012', '1a050014', 'ff']) {
+    assert.equal(policyFor(query(key), { cacheQueryTtls: { [key]: 1000 } }), null, key);
+  }
+});
+
+test('query override validation canonicalizes keys and rejects duplicates, setters and malformed values', () => {
+  assert.deepEqual(validateQueryTtls({ '1C00': 100, '271A00': 0, '1502': undefined, '1511': '' }), { '1c00': 100, '271a00': 0 });
+  for (const map of [null, [], new Map(), { odd: 1 }, { '1c0001': 1 }, { '1200': 1 }, { '1a050014': 1 },
+    { '1502': '100' }, { '1502': null }, { '1502': true }, { '1502': -1 }, { '1502': 1.5 }, { '1502': 1001 },
+    { '1502': Infinity }, { '1502': NaN }, { '1c00': 100, '1C00': 200 }, { '1c00': '', '1C00': undefined }]) {
+    assert.throws(() => validateQueryTtls(map));
+  }
+  const input = { '1C00': 100 }; const normalized = validateQueryTtls(input); input['1C00'] = 1;
+  assert.equal(normalized['1c00'], 100);
+});
+
+test('query catalog and status show bounded human labels with honest effective overrides', () => {
+  const catalog = queryCatalog(); assert.ok(catalog.length > 20 && catalog.length <= 128);
+  assert.equal(new Set(catalog.map((entry) => entry.key)).size, catalog.length);
+  assert.equal(catalog.find((entry) => entry.key === '1502').label, 'S-meter');
+  for (const entry of catalog) {
+    assert.equal(entry.key, entry.key.toLowerCase()); assert.ok(entry.label);
+    assert.equal(policyFor(query(entry.key)).ttlMs, entry.defaultTtlMs);
+  }
+  const settings = cacheQuerySettings({ cacheMetersMs: 333, cacheStateMs: 0, cacheQueryTtls: { '1502': 200, '1511': 0, '1C00': 75 } });
+  assert.deepEqual(settings.find((entry) => entry.key === '1502'), { key: '1502', label: 'S-meter', category: 'meters', overrideMs: 200, effectiveMs: 200 });
+  assert.equal(settings.find((entry) => entry.key === '1511').effectiveMs, 0);
+  assert.equal(settings.find((entry) => entry.key === '1512').overrideMs, null);
+  assert.equal(settings.find((entry) => entry.key === '1512').effectiveMs, 333);
+  assert.equal(settings.find((entry) => entry.key === '1c00').effectiveMs, 75);
+  assert.equal(settings.find((entry) => entry.key === '1c01').effectiveMs, 0);
+  assert.ok(cacheQuerySettings({ cacheEnabled: false, cacheQueryTtls: { '1502': 200 } }).every((entry) => entry.effectiveMs === 0));
+  catalog[0].label = 'changed'; assert.notEqual(queryCatalog()[0].label, 'changed');
 });

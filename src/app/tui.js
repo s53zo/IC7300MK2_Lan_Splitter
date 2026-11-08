@@ -35,10 +35,15 @@ function schemaType(field) { return field.type === 'boolean' || field.type === '
 function displayValue(field, value, hasPassword) {
     if (field.key === 'ICOM_PASSWORD' || field.type === 'password') return value ? '********' : hasPassword ? '(saved; leave blank to keep)' : '(not saved)';
     if (schemaType(field) === 'boolean') return value === true || value === '1' || value === 1 ? 'On' : 'Off';
+    if (schemaType(field) === 'optional-number' && String(value ?? '').trim() === '') return '(family default)';
     return safe(value) || '(not set)';
 }
 function statusOf(state) { return state.status || {}; }
 function cacheOf(state) { return statusOf(state).cache || state.cache || {}; }
+function querySetting(cache, key) {
+    const setting = cache.querySettings?.find((row) => row.key === key.toLowerCase());
+    return setting ? setting.effectiveMs === 0 ? 'off' : String(setting.effectiveMs) : '—';
+}
 function metricsOf(state) { return statusOf(state).metrics || state.metrics || {}; }
 function contentLines(app) {
     const s = app.state || {}, status = statusOf(s), cache = cacheOf(s), metrics = metricsOf(s);
@@ -88,8 +93,8 @@ function contentLines(app) {
             `Coalesced: ${number(cache.coalesced, 0)} (included in hits, not additional savings)`,
             `Radio queries avoided: ${number(cache.hits, 0)} | Physical radio transactions: ${number(metrics.physicalTotal, 0)}`,
             `Effective TTL: meters/ADC ${ms(ttl.meters)}, RX/TX/tuner ${ms(ttl.state)}, settings ${ms(ttl.settings)}, tuning ${ms(ttl.tuning)}`,
-            '', 'QUERY        REQUESTS      HITS      MISSES      COALESCED',
-            ...rows.map(([query, count]) => `${safe(query).padEnd(12)} ${number(count.requests, 0).padStart(8)} ${number(count.hits, 0).padStart(9)} ${number(count.misses, 0).padStart(11)} ${number(count.coalesced, 0).padStart(12)}`),
+            '', 'QUERY        REQUESTS      HITS      MISSES      COALESCED    TTL ms',
+            ...rows.map(([query, count]) => `${safe(query).padEnd(12)} ${number(count.requests, 0).padStart(8)} ${number(count.hits, 0).padStart(9)} ${number(count.misses, 0).padStart(11)} ${number(count.coalesced, 0).padStart(12)} ${querySetting(cache, query).padStart(9)}`),
             ...(!rows.length ? ['No eligible client queries yet.'] : []),
         ];
     }

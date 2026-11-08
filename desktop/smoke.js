@@ -67,16 +67,61 @@ async function run({ window, controller, outputDirectory, directory, credentialS
         assert.equal(controller.getState().status.nativeClients.authenticated, 2); assert.equal(controller.getState().status.connectedUpstreamSessions, 1);
         assert.deepEqual(radio.connections, { control: 1, civ: 1, audio: 1 });
         for (const screen of ['dashboard', 'clients', 'cache', 'settings', 'diagnostics']) { await nav(screen); await capture(`03-${screen}`); }
+        const queryPolicy = (owner, key) => owner.getState().status.cache.querySettings.find((entry) => entry.key === key);
+        assert.equal(queryPolicy(controller, '1502').effectiveMs, 100);
+        assert.equal(queryPolicy(controller, '1507').effectiveMs, 100);
+        await Promise.allSettled(peers.map((peer) => peer.close())); peers.length = 0;
         await nav('settings');
+        await js("document.getElementById('per-command-settings').open=true; document.getElementById('per-command-settings').scrollIntoView({block:'start'})");
+        assert.equal(await js("document.getElementById('ICOM_CACHE_QUERY_1502_MS').type"), 'number');
+        assert.equal(await js("document.getElementById('ICOM_CACHE_QUERY_1502_MS').placeholder"), 'Use family default');
+        // Zero disables only this allowlisted query, after explicit reconnect.
+        await js("document.getElementById('ICOM_CACHE_QUERY_1502_MS').value='0'"); await click('save-settings');
+        await until(() => controller.getSettings().values.ICOM_CACHE_QUERY_1502_MS === '0', 'saved per-command disable');
+        assert.equal(queryPolicy(controller, '1502').effectiveMs, 100, 'pending disable must not alter active lifetime');
+        await js("document.getElementById('ICOM_CACHE_QUERY_1502_MS').scrollIntoView({block:'center'})"); await capture('08-per-command-disabled-pending');
+        await click('apply-settings'); await until(() => js("document.getElementById('confirm-dialog').open"), 'apply per-command disable'); await click('confirm-accept');
+        await until(() => controller.getState().status.broker.ready && queryPolicy(controller, '1502').effectiveMs === 0, 'active per-command disable');
+        assert.equal(queryPolicy(controller, '1507').effectiveMs, 100, 'another meter must retain its family default');
+        await nav('cache'); await until(() => js("document.querySelector('[data-query-ttl=\"1502\"]')?.textContent === '0 ms'"), 'displayed disabled query lifetime'); await capture('08a-per-command-disabled-active');
+        await nav('settings');
+        async function meterReads() {
+            const peer = await client({ host: '127.0.0.1', controlPort: control, civPort: civ, audioPort: audio }, { password: 'testpass' });
+            try {
+                const sent = () => radio.commands.filter((bytes) => bytes[4] === 0x15 && bytes[5] === 2).length;
+                const before = sent();
+                for (let i = 0; i < 2; i++) {
+                    peer.receivedCiv.length = 0; peer.sendCiv(frame(0x15, [2], 0xe3));
+                    await until(() => peer.receivedCiv.some((bytes) => bytes[2] === 0xe3 && bytes[4] === 0x15 && bytes[5] === 2), 'meter probe reply');
+                }
+                return sent() - before;
+            } finally { await peer.close(); }
+        }
+        assert.equal(await meterReads(), 2, 'zero lifetime must forward both meter reads');
+        // Clearing the optional value restores inheritance, rather than zero.
+        await js("document.getElementById('ICOM_CACHE_QUERY_1502_MS').value=''"); await click('save-settings');
+        await until(() => controller.getSettings().values.ICOM_CACHE_QUERY_1502_MS === '', 'saved family inheritance');
+        await until(() => js("!document.getElementById('apply-settings').disabled"), 'cleared override save completed');
+        await click('apply-settings'); await until(() => js("document.getElementById('confirm-dialog').open"), 'apply family inheritance'); await click('confirm-accept');
+        await until(() => controller.getState().status.broker.ready && queryPolicy(controller, '1502').effectiveMs === 100, 'active family inheritance');
+        assert.equal(queryPolicy(controller, '1502').overrideMs, null);
+        assert.equal(await meterReads(), 1, 'blank override must share fresh family-default replies');
+        await js("document.getElementById('ICOM_CACHE_QUERY_1502_MS').scrollIntoView({block:'center'})"); await capture('09-per-command-family-default');
+        await nav('cache'); await until(() => js("document.querySelector('[data-query-ttl=\"1502\"]')?.textContent === '100 ms'"), 'displayed inherited query lifetime');
+        await nav('settings');
+        peers.push(await client({ host: '127.0.0.1', controlPort: control, civPort: civ, audioPort: audio }, { password: 'testpass' }));
+        peers.push(await client({ host: '127.0.0.1', controlPort: control, civPort: civ, audioPort: audio }, { password: 'testpass' }));
+        const connectionsBeforeCancel = radio.connections.control;
         const [pendingControl] = await ports();
-        await js(`document.getElementById('ICOM_CACHE_METERS_MS').value='125'; document.getElementById('ICOM_LISTEN_CONTROL_PORT').value=${JSON.stringify(String(pendingControl))}`); await click('save-settings');
+        await js(`document.getElementById('ICOM_CACHE_METERS_MS').value='125'; document.getElementById('ICOM_CACHE_QUERY_1502_MS').value='200'; document.getElementById('ICOM_LISTEN_CONTROL_PORT').value=${JSON.stringify(String(pendingControl))}`); await click('save-settings');
         await until(() => controller.getState().pendingChanges, 'pending settings');
         assert.equal(controller.service.broker.options.cacheMetersMs, 100, 'saved change must not alter running connection');
         assert.equal(controller.service.address().controlPort, control, 'pending port must not alter active listener');
         await until(() => js(`document.getElementById('footer-address').textContent.includes(${JSON.stringify('control port ')} + ${control})`), 'active connection label remains unchanged');
         await click('apply-settings'); await until(() => js("document.getElementById('confirm-dialog').open"), 'reconnect confirmation');
-        await click('confirm-cancel'); assert.equal(controller.service.broker.options.cacheMetersMs, 100); assert.equal(radio.connections.control, 1);
+        await click('confirm-cancel'); assert.equal(controller.service.broker.options.cacheMetersMs, 100); assert.equal(radio.connections.control, connectionsBeforeCancel);
         await capture('04-pending-settings');
+        await js("document.getElementById('ICOM_CACHE_QUERY_1502_MS').scrollIntoView({block:'center'})"); await capture('10-per-command-200ms-pending');
         await nav('dashboard'); window.setSize(640, 720); await capture('05-narrow-dashboard');
         assert.equal(await js('document.documentElement.scrollWidth <= window.innerWidth'), true, 'narrow dashboard must not overflow horizontally');
         await nav('settings'); await capture('06-narrow-settings');
@@ -100,6 +145,9 @@ async function run({ window, controller, outputDirectory, directory, credentialS
         try {
             await reopened.initialize(); await until(() => reopened.getState().status?.broker?.ready, 'automatic reconnect from saved settings');
             assert.equal(reopened.getState().firstRun, false); assert.equal(reopened.service.broker.options.cacheMetersMs, 125);
+            assert.equal(queryPolicy(reopened, '1502').overrideMs, 200); assert.equal(queryPolicy(reopened, '1502').effectiveMs, 200);
+            assert.equal(queryPolicy(reopened, '1507').overrideMs, null); assert.equal(queryPolicy(reopened, '1507').effectiveMs, 125);
+            assert.equal(reopened.getSettings().values.ICOM_CACHE_QUERY_1502_MS, '200');
             assert.equal(reopened.getState().history.length <= 2, true, 'history resets on reopen');
         } finally { await reopened.close({ confirmedTx: true }); }
         const report = require('./security').diagnosticReport(controller.getState());
@@ -109,6 +157,7 @@ async function run({ window, controller, outputDirectory, directory, credentialS
             clients: 2, upstreamSessions: 1, privateReplies: true, exactAudioAndScope: true, cacheHits: true, measuredPing: true,
             saveWithoutApplying: true, reconnectCancellation: true, txCloseCancellation: true, txCloseConfirmedRelease: true, observedRxTxDisplay: true,
             automaticConnectionOnReopen: true, historyReset: true, narrowLayout: true, redactedDiagnostics: true,
+            perCommandCacheDisabled: true, perCommandBlankInherits: true, perCommand200msSavedAndReopened: true, otherQueriesRetainDefaults: true,
             physicalRadioUsed: false, screenshots: (await fs.readdir(outputDirectory)).filter((name) => name.endsWith('.png')) };
         await fs.writeFile(path.join(outputDirectory, 'result.json'), JSON.stringify(result, null, 2) + '\n'); console.log(JSON.stringify(result));
     } finally { await Promise.allSettled(peers.map((p) => p.close())); await radio.close(); }

@@ -44,6 +44,51 @@ add('271700', 'settings', 1, range(0, 1)); // Hold.
 add('271900', 'settings', 3, (d) => range(0, 2000)(d.subarray(0, 2)) && [0, 0x50].includes(d[1]) && d[2] <= 1);
 add('271a00', 'settings', 1, range(0, 2)); // Sweep speed.
 
+const defaultTtls = { meters: 100, state: 100, settings: 250, tuning: 50 };
+const labels = {
+  '03': 'Selected frequency', '04': 'Mode and filter', '0f': 'Split state',
+  '10': 'Tuning step', '11': 'Attenuator', '12': 'RX antenna',
+  '1502': 'S-meter', '1507': 'ADC overflow', '1511': 'Power meter', '1512': 'SWR meter', '1513': 'ALC meter',
+  '1c00': 'RX/TX state', '1c01': 'Tuner state',
+  '1402': 'RF gain', '140a': 'RF power setting', '1602': 'Preamp selection',
+  '1640': 'Noise reduction on/off', '1641': 'Auto notch on/off',
+  '271400': 'Scope mode', '271500': 'Scope span', '271600': 'Scope fixed edge',
+  '271700': 'Scope hold', '271900': 'Scope reference level', '271a00': 'Scope sweep speed',
+};
+function queryCatalog() {
+  return [...shapes].map(([key, shape]) => ({ key, label: labels[key] || `CI-V query ${key.toUpperCase()}`,
+    category: shape.category, defaultTtlMs: defaultTtls[shape.category] })).sort((a, b) => a.key.localeCompare(b.key));
+}
+function validateQueryTtls(map = {}) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)
+    || ![Object.prototype, null].includes(Object.getPrototypeOf(map))) throw new Error('Per-command cache overrides must be an object');
+  const normalized = {}, seen = new Set();
+  for (const original of Reflect.ownKeys(map)) {
+    if (typeof original !== 'string' || !/^(?:[0-9a-fA-F]{2}){1,5}$/.test(original)) throw new Error('Invalid CI-V cache query key');
+    const key = original.toLowerCase();
+    if (!shapes.has(key)) throw new Error('Unsupported CI-V cache query key');
+    if (seen.has(key)) throw new Error('Duplicate CI-V cache query key');
+    seen.add(key);
+    const value = map[original];
+    if (value === '' || value === undefined) continue;
+    if (!Number.isSafeInteger(value) || value < 0 || value > 1000) throw new Error(`Cache time for CI-V ${key.toUpperCase()} must be an integer from 0 to 1000 ms`);
+    normalized[key] = value;
+  }
+  return normalized;
+}
+function familyTtl(category, options) {
+  return options[`cache${category[0].toUpperCase()}${category.slice(1)}Ms`] ?? defaultTtls[category];
+}
+function cacheQuerySettings(options = {}) {
+  const overrides = validateQueryTtls(options.cacheQueryTtls);
+  return queryCatalog().map(({ key, label, category }) => {
+    const overrideMs = Object.hasOwn(overrides, key) ? overrides[key] : null;
+    const selected = overrideMs ?? familyTtl(category, options);
+    const effectiveMs = options.cacheEnabled === false ? 0 : Number.isSafeInteger(selected) && selected >= 0 && selected <= 1000 ? selected : 0;
+    return { key, label, category, overrideMs, effectiveMs };
+  });
+}
+
 function body(bytes) {
   if (!Buffer.isBuffer(bytes) || bytes.length < 6 || bytes[0] !== 0xfe || bytes[1] !== 0xfe || bytes.at(-1) !== 0xfd) return null;
   if (bytes.subarray(2, -1).some((v) => v === 0xfe || v === 0xfd)) return null;
@@ -55,10 +100,10 @@ function policyFor(bytes, ttlOptions = {}) {
   if (!data || bytes[2] === 0 || bytes[3] === 0) return null;
   const key = data.toString('hex'), shape = shapes.get(key);
   if (!shape) return null;
-  const defaults = { meters: 100, state: 100, settings: 250, tuning: 50 };
-  const option = `cache${shape.category[0].toUpperCase()}${shape.category.slice(1)}Ms`;
-  const ttlMs = ttlOptions[option] ?? defaults[shape.category];
-  if (!Number.isFinite(ttlMs) || ttlMs <= 0) return null;
+  if (ttlOptions.cacheEnabled === false) return null;
+  const override = ttlOptions.cacheQueryTtls?.[key] ?? ttlOptions.cacheQueryTtls?.[key.toUpperCase()];
+  const ttlMs = override === undefined || override === '' ? familyTtl(shape.category, ttlOptions) : override;
+  if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0 || ttlMs > 1000) return null;
   return { key, category: shape.category, ttlMs, prefix: Buffer.from(shape.prefix ?? data.subarray(1)) };
 }
 
@@ -70,4 +115,4 @@ function validReply(query, reply) {
   return shape.validate(data.subarray(request.length));
 }
 
-module.exports = { policyFor, validReply };
+module.exports = { policyFor, validReply, queryCatalog, validateQueryTtls, cacheQuerySettings };

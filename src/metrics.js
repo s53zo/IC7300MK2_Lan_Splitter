@@ -19,7 +19,7 @@ class Histogram {
 }
 const REASONS = {
     misses: ['absent', 'expired', 'admission_epoch', 'entry_epoch', 'generation', 'other'],
-    storeSkips: ['disabled', 'family_disabled', 'unstable', 'admission_epoch', 'invalid_reply', 'unknown_query', 'other'],
+    storeSkips: ['disabled', 'family_disabled', 'query_disabled', 'unstable', 'admission_epoch', 'invalid_reply', 'unknown_query', 'other'],
     invalidations: ['mutation_admission', 'mutation_dispatch', 'mutation_outcome', 'notification', 'lifecycle', 'tx_transition', 'negative_reply', 'observed_tx', 'other'],
     rejected: ['invalid_radio', 'permission', 'queue_capacity', 'other'],
     cancelled: ['client_disconnect', 'media_generation', 'permission', 'session_loss', 'tx_transition', 'queue_capacity', 'other'],

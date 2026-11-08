@@ -198,3 +198,39 @@ the same saved settings. Never run both versions against the radio together.
 
 See [release downloads and platform requirements](releases.md) for checksums,
 OS/library requirements, source archives and the separate headless downloads.
+
+## Per-command cache lifetimes (builds after v0.8)
+
+In **Settings**, expand **Per-command cache lifetimes**. Each supported read query
+has a named entry with its hexadecimal CI-V code, such as **S-meter (1502)** or
+**Auto notch on/off (1641)**. You can change one without changing the others.
+
+| Entry | Meaning |
+| --- | --- |
+| Blank | Inherit that query's family default |
+| `0` | Disable caching for this query |
+| `1`–`1000` | Custom lifetime in milliseconds |
+
+For example, set S-meter `1502` to `200` ms and leave ADC overflow `1507` blank.
+The S-meter can reuse replies for 200 ms while ADC overflow continues using the
+Meter/ADC family default (normally 100 ms). Clearing the S-meter entry restores
+inheritance. A positive override takes priority even if its family default is
+zero; turning the **global cache switch off** disables every query regardless of
+overrides. Restoring defaults clears all overrides in the form.
+
+Save, then choose **Apply & reconnect** when ready. Saving alone keeps the active
+connection and its lifetimes unchanged. The Cache table shows the **active**
+lifetime beside each observed query, including `0 ms` for disabled queries;
+coalesced counts remain a subset of cache hits. Counters cover the whole session,
+including hits collected before a lifetime change. A longer lifetime permits older
+display data, and known state changes can invalidate entries before that lifetime.
+
+On Linux press **4** for Settings, navigate the per-command entries with arrows
+or Page Up/Page Down, and press Enter to edit. Clear a value with Ctrl+U while
+editing to restore inheritance, then press Enter and **S** to save; **F8** applies
+through the existing reconnect confirmation. The Cache view also shows active
+per-query lifetimes.
+
+Only the reviewed read-query allowlist is configurable. These controls cannot
+cache writes, arbitrary commands or credential-bearing menu reads. Internal TX
+safety and release queries always read the radio freshly.

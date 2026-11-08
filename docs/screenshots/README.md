@@ -10,3 +10,7 @@ Intel Mac and Apple Silicon Mac, including errors and advanced configuration.
 - [Dashboard](dashboard.png)
 - [Narrow window](narrow.png)
 - [TX confirmation](tx-confirmation.png)
+
+[Per-command cache settings](per-command-cache.png) shows the optional overrides
+added after v0.8. Blank fields inherit their family default; saved overrides wait
+for reconnect before changing the active connection.

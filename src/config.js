@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const net = require('node:net');
 const os = require('node:os');
+const { validateQueryTtls } = require('./read-cache');
 
 function integer(value, name, fallback, min = 1, max = 65535) {
     if (value === undefined) return fallback;
@@ -48,6 +49,17 @@ function config(env = process.env) {
         && Object.values(radioPorts).some((port) => Object.values(serverPorts).includes(port))) {
         throw new Error('Radio endpoint overlaps the splitter listener; refusing a relay loop');
     }
+    const queryTtls = {};
+    for (const key of Object.keys(env)) {
+        if (!key.startsWith('ICOM_CACHE_QUERY')) continue;
+        const match = /^ICOM_CACHE_QUERY_((?:[0-9A-F]{2}){1,5})_MS$/.exec(key);
+        if (!match) throw new Error('Invalid per-command cache environment setting');
+        // Validate the key even for an inherited/blank value: setters and
+        // credential-bearing menu reads must never become cacheable.
+        const query = match[1].toLowerCase();
+        queryTtls[query] = env[key] === '' || env[key] === undefined ? undefined : integer(env[key], key, undefined, 0, 1000);
+    }
+    const cacheQueryTtls = validateQueryTtls(queryTtls);
     return {
         radio: { host, username, password, ...radioPorts,
             timeoutMs: integer(env.ICOM_RADIO_TIMEOUT_MS, 'ICOM_RADIO_TIMEOUT_MS', 15000, 100, 300000) },
@@ -59,6 +71,7 @@ function config(env = process.env) {
         broker: {
             requestTimeoutMs: integer(env.ICOM_COMMAND_TIMEOUT_MS, 'ICOM_COMMAND_TIMEOUT_MS', 2000, 100, 30000),
             cacheEnabled: boolean(env.ICOM_CACHE_ENABLED, 'ICOM_CACHE_ENABLED', true),
+            cacheQueryTtls,
             cacheMetersMs: integer(env.ICOM_CACHE_METERS_MS, 'ICOM_CACHE_METERS_MS', 100, 0, 1000),
             cacheStateMs: integer(env.ICOM_CACHE_STATE_MS, 'ICOM_CACHE_STATE_MS', 100, 0, 1000),
             cacheSettingsMs: integer(env.ICOM_CACHE_SETTINGS_MS, 'ICOM_CACHE_SETTINGS_MS', 250, 0, 1000),

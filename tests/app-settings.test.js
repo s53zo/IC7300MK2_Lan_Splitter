@@ -16,7 +16,7 @@ test('every public CLI setting is in the editable schema with validation and uni
     }
     for (const field of FIELDS) {
         assert.ok(field.label && field.description && field.group);
-        if (field.type !== 'number') continue;
+        if (!['number', 'optional-number'].includes(field.type)) continue;
         for (const invalid of [field.min - 1, field.max + 1, 'bad', '1.5']) {
             assert.throws(() => validate({ ...valid(), [field.key]: invalid }), undefined, field.key);
         }
@@ -69,4 +69,23 @@ test('failed settings write restores the previous credential and import size is 
     assert.equal(await store.credentials.read(), 'testpass');
     const oversized = path.join(dir, 'too-large'); await fs.writeFile(oversized, 'a'.repeat(1000));
     assert.throws(() => validate({ ...valid(), ICOM_PASSWORD: '', ICOM_PASSWORD_FILE: oversized }), /Cannot read/);
+});
+
+
+test('per-command cache fields persist overrides and blank values restore family inheritance', async (t) => {
+    const { queryCatalog } = require('../src/read-cache');
+    const fields = FIELDS.filter((field) => field.cacheQuery);
+    assert.equal(fields.length, queryCatalog().length);
+    assert.ok(fields.every((field) => field.type === 'optional-number' && field.default === '' && field.min === 0 && field.max === 1000));
+    const result = validate({ ...valid(), ICOM_CACHE_QUERY_1502_MS: '0200', ICOM_CACHE_QUERY_1507_MS: '0' });
+    assert.deepEqual(result.options.broker.cacheQueryTtls, { '1502': 200, '1507': 0 });
+    assert.equal(result.values.ICOM_CACHE_QUERY_1502_MS, '200');
+    const dir = await directory(t), store = new SettingsStore(dir);
+    await store.save(result.values, result.password);
+    const loaded = await store.load(), restored = validate(loaded.values, loaded.password);
+    assert.deepEqual(restored.options.broker.cacheQueryTtls, { '1502': 200, '1507': 0 });
+    const inherited = validate({ ICOM_CACHE_QUERY_1502_MS: '' }, loaded.password, loaded.values);
+    assert.deepEqual(inherited.options.broker.cacheQueryTtls, { '1507': 0 });
+    assert.equal(inherited.options.broker.cacheMetersMs, 100);
+    assert.equal(inherited.values.ICOM_CACHE_QUERY_1502_MS, '');
 });

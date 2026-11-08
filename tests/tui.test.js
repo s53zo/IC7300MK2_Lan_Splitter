@@ -180,3 +180,19 @@ test('observed radio RX/TX stays distinct from quiet or pending TX ownership', a
     assert.match(screen, /Radio state: Unavailable/);
     assert.equal(screen.includes('Radio state: RX'), false, 'connection alone cannot manufacture observed RX');
 });
+
+
+test('terminal query cache overrides edit and clear separately from family defaults', async (t) => {
+    const { app, controller } = await setup(t);
+    const field = { key: 'ICOM_CACHE_QUERY_1502_MS', label: 'S-meter (1502)', type: 'optional-number', default: '', description: 'Blank inherits; 0 disables this query.' };
+    app.fields.push(field); app.draft[field.key] = '';
+    app.selection = app.fields.length - 1; app.draw();
+    assert.match(renderScreen(app, 120, 40), /S-meter \(1502\): \(family default\)/);
+    await key(app, 'return'); await app.handleKey('200', {}); await key(app, 'return'); await key(app, 's');
+    assert.equal(controller.saved[field.key], '200');
+    app.selection = app.fields.length - 1; await key(app, 'return'); await key(app, 'u', '', { ctrl: true }); await key(app, 'return'); await key(app, 's');
+    assert.equal(controller.saved[field.key], '');
+    app.state.status.cache.byQuery = { '1502': { requests: 2, hits: 1, misses: 1, coalesced: 1 } };
+    app.state.status.cache.querySettings = [{ key: '1502', effectiveMs: 0 }]; app.view = 2;
+    assert.match(renderScreen(app, 120, 40), /TTL ms/); assert.match(renderScreen(app, 120, 40), /off/);
+});

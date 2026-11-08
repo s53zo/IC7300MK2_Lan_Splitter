@@ -87,6 +87,9 @@ byId('start-button').addEventListener('click', () => action('start'));
 byId('stop-button').addEventListener('click', () => action('stop'));
 byId('reconnect-button').addEventListener('click', reconnect);
 byId('apply-settings').addEventListener('click', reconnect);
+byId('configure-query-cache').addEventListener('click', () => {
+    view('settings'); byId('per-command-settings').open = true; byId('per-command-settings').scrollIntoView({ block: 'start' });
+});
 byId('export-report').addEventListener('click', async () => { try { if (await request('export')) message('Diagnostic report saved.'); } catch (error) { message(error.message, true); } });
 function renderControls() {
     const active = state.running || state.connecting;
@@ -132,7 +135,8 @@ function render(next) {
     byId('pending-banner').hidden = !state.pendingChanges;
     text('eligible-count', count(cache.requests)); text('avoided-count', count(cache.hits)); text('miss-count', count(cache.misses)); text('coalesced-count', count(cache.coalesced));
     text('cache-enabled', cache.enabled === false ? 'Disabled' : 'Enabled');
-    renderClients(state.clients || []); renderQueries(cache.byQuery || {}); renderTtls(cache.ttlMs || {}); renderHistory(state.history || []); renderEvents(state.events || []);
+    text('query-lifetime-heading', state.running ? 'Active lifetime' : 'Last active lifetime');
+    renderClients(state.clients || []); renderQueries(cache.byQuery || {}, cache.querySettings || []); renderTtls(cache.ttlMs || {}); renderHistory(state.history || []); renderEvents(state.events || []);
     if (state.lastError) message(state.lastError, true);
     text('setup-eyebrow', state.firstRun ? 'FIRST-TIME SETUP' : 'RADIO & NETWORK');
     text('setup-title', state.firstRun ? 'Welcome. Let’s connect your radio.' : 'Connection settings');
@@ -149,12 +153,19 @@ function renderClients(clients) {
         const tagCell = element('td'); tagCell.append(element('span', client.txOwner ? 'TX owner' : 'Shared control', `client-tag${client.txOwner ? ' tx' : ''}`)); row.append(tagCell); byId('client-rows').append(row);
     }
 }
-function renderQueries(queries) {
+function renderQueries(queries, querySettings) {
     const root = byId('query-rows'); root.replaceChildren();
+    const policies = new Map(querySettings.map((query) => [query.key.toLowerCase(), query]));
     for (const [key, query] of Object.entries(queries).sort((a, b) => number(b[1].hits) - number(a[1].hits))) {
-        const row = element('tr'); row.append(element('td', key.toUpperCase(), 'mono'), element('td', count(query.requests)), element('td', count(query.hits)), element('td', query.requests ? `${decimal(query.hits / query.requests * 100)}%` : '—'), element('td', count(query.coalesced))); root.append(row);
+        const policy = policies.get(key.toLowerCase()), row = element('tr');
+        const parameter = element('td');
+        parameter.append(element('span', policy?.label || 'Radio query', 'query-label'), element('small', key.toUpperCase(), 'mono query-code'));
+        const lifetime = element('td', policy ? `${policy.effectiveMs} ms` : '—');
+        lifetime.dataset.queryTtl = key.toLowerCase();
+        if (policy) lifetime.title = policy.effectiveMs === 0 ? 'Caching is disabled for this query.' : policy.overrideMs === null ? 'Uses the active family default.' : 'Uses a per-command override.';
+        row.append(parameter, lifetime, element('td', count(query.requests)), element('td', count(query.hits)), element('td', query.requests ? `${decimal(query.hits / query.requests * 100)}%` : '—'), element('td', count(query.coalesced))); root.append(row);
     }
-    if (!root.children.length) { const row = element('tr'); const cell = element('td', 'Query statistics will appear when clients start polling.'); cell.colSpan = 5; row.append(cell); root.append(row); }
+    if (!root.children.length) { const row = element('tr'); const cell = element('td', 'Query statistics will appear when clients start polling.'); cell.colSpan = 6; row.append(cell); root.append(row); }
 }
 function renderTtls(ttls) {
     const root = byId('ttl-cards'); root.replaceChildren();
@@ -177,10 +188,15 @@ function renderEvents(events) {
 }
 function renderFields() {
     const basic = new Set(['ICOM_RADIO_HOST', 'ICOM_USERNAME', 'ICOM_PASSWORD', 'ICOM_BIND_ADDRESS']);
-    const groups = new Map(); byId('basic-fields').replaceChildren(); byId('advanced-fields').replaceChildren();
+    const groups = new Map(); byId('basic-fields').replaceChildren(); byId('advanced-fields').replaceChildren(); byId('per-command-fields').replaceChildren();
     for (const field of fields) {
         const wrapper = element('div', undefined, `field${field.type === 'file' ? ' wide' : ''}`);
-        const label = element('label', field.key === 'ICOM_BIND_ADDRESS' ? 'Accept clients on' : field.label); label.htmlFor = field.key; wrapper.append(label);
+        const command = /^ICOM_CACHE_QUERY_([0-9A-F]+)_MS$/.exec(field.key);
+        const commandLabel = command ? field.label.replace(/\s*\([0-9a-f]+\)$/i, '').replace(/^CI-V query [0-9a-f]+$/i, 'Radio query') : field.label;
+        const label = element('label', field.key === 'ICOM_BIND_ADDRESS' ? 'Accept clients on' : command ? `${commandLabel} (ms)` : field.label);
+        label.htmlFor = field.key;
+        if (command) label.append(element('span', command[1], 'command-badge mono'));
+        wrapper.append(label);
         let input;
         if (field.key === 'ICOM_BIND_ADDRESS') {
             input = element('select'); input.append(new Option('All network adapters', '0.0.0.0'), new Option('This computer only', '127.0.0.1'));
@@ -193,13 +209,14 @@ function renderFields() {
             if (saved && !added.has(saved)) input.append(new Option(`Saved address (${saved})`, saved));
         }
         else if (field.type === 'boolean') { input = element('select'); input.append(new Option('Enabled', '1'), new Option('Disabled', '0')); }
-        else { input = element('input'); input.type = field.key === 'ICOM_PASSWORD' ? 'password' : ['integer', 'number'].includes(field.type) ? 'number' : 'text'; }
+        else { input = element('input'); input.type = field.key === 'ICOM_PASSWORD' ? 'password' : ['integer', 'number', 'optional-number'].includes(field.type) ? 'number' : 'text'; }
         input.id = field.key; input.name = field.key; input.autocomplete = field.key === 'ICOM_PASSWORD' ? 'new-password' : 'off';
         if (field.min !== undefined && input.type === 'number') input.min = field.min;
         if (field.max !== undefined && input.type === 'number') input.max = field.max;
         input.value = settings.values?.[field.key] ?? field.default ?? '';
         if (field.key === 'ICOM_PASSWORD') input.placeholder = settings.hasPassword ? 'Saved password — leave blank to keep' : 'Radio password';
         if (field.key === 'ICOM_RADIO_HOST') input.placeholder = 'For example, 192.168.1.50';
+        if (field.type === 'optional-number') { input.placeholder = 'Use family default'; input.step = '1'; }
         if (field.type === 'file') {
             input.readOnly = true; input.placeholder = 'Optional: import an existing password file';
             const line = element('div', undefined, 'field-inline'), browse = element('button', 'Choose file…', 'button button-secondary'); browse.type = 'button';
@@ -209,6 +226,7 @@ function renderFields() {
         } else wrapper.append(input);
         wrapper.append(element('small', field.key === 'ICOM_BIND_ADDRESS' ? 'Choose the network adapter your radio clients will use to reach this computer.' : field.description || ''));
         if (basic.has(field.key)) byId('basic-fields').append(wrapper);
+        else if (command || field.group === 'Per-command cache') byId('per-command-fields').append(wrapper);
         else {
             const groupName = field.group || 'Advanced';
             if (!groups.has(groupName)) { const group = element('div', undefined, 'field-group'); group.append(element('h3', groupName)); groups.set(groupName, group); byId('advanced-fields').append(group); }

@@ -249,3 +249,29 @@ pre-write sharing opportunity blocked by a future admitted mutation. It is an
 upper bound on a possible optimization, not queries already saved: later expiry,
 notifications or cancellation may prevent reuse. It does not enable speculative
 sharing. Keep current behavior until workload measurements justify that change.
+
+### Per-command cache overrides
+
+Newer builds accept `ICOM_CACHE_QUERY_<HEX>_MS` for each explicitly supported
+read query. Use the full uppercase hexadecimal query body, without framing,
+radio/controller addresses or reply data. Example:
+
+```sh
+export ICOM_CACHE_QUERY_1502_MS=200   # S-meter only
+export ICOM_CACHE_QUERY_1507_MS=0     # Disable overflow-query caching only
+```
+
+An unset or empty variable inherits its family lifetime. An integer 1–1000
+replaces that default for the specific query; 0 disables that query. Per-command
+values take precedence over family defaults, including family default 0.
+`ICOM_CACHE_ENABLED=0` disables all sharing regardless of overrides. Invalid
+names, unsupported queries, setters and out-of-range values fail configuration
+validation; this feature never expands the read allowlist.
+
+GUI/TUI values persist in the normal protected settings file and follow the same
+save/pending/reconnect workflow. Existing configuration without override keys
+retains its behavior. Status `cache.querySettings` lists the bounded catalog,
+explicit overrides and effective lifetimes. The `query_disabled` store-skip
+counter distinguishes an explicit query disable from a disabled family. Safety
+polling and release reads remain fresh; invalidation/order/generation barriers
+and reply validation remain unchanged.
