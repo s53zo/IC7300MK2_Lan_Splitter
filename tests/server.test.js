@@ -336,3 +336,107 @@ test('malformed native TX audio identifiers cannot inject PCM', async (t) => {
   assert.deepEqual(media, [good]);
   assert.ok(server.stats.malformed > 0);
 });
+
+function admissionFixture(t, options = {}) {
+  let clock = 0;
+  const sent = [];
+  const server = new NativeServer({ username: 'beer', password: 'beer', now: () => clock, ...options });
+  server.sockets.control = { send: (packet, _port, _host, done) => { sent.push(Buffer.from(packet)); done?.(); }, close: (done) => done() };
+  t.after(() => server.close());
+  const there = (port) => {
+    server.receive('control', envelope(16, 3, port), { address: '127.0.0.1', port });
+    return server.peers.control.get(`127.0.0.1:${port}`)?.client;
+  };
+  const login = (client) => {
+    const peer = client.streams.control;
+    const remote = { address: peer.host, port: peer.port };
+    server.receive('control', envelope(16, 6, peer.remoteId, peer.localId), remote);
+    const packet = envelope(128, 0, peer.remoteId, peer.localId, 1);
+    packet[20] = 1;
+    const credential = Buffer.from('2b3f555c000000000000000000000000', 'hex');
+    credential.copy(packet, 64); credential.copy(packet, 80);
+    server.receive('control', packet, remote);
+  };
+  return { server, sent, there, login, at: (value) => { clock = value; } };
+}
+
+test('preauthentication has an absolute deadline despite repeated discovery and ping traffic', (t) => {
+  const { server, there, at } = admissionFixture(t, { preAuthTimeoutMs: 10000, timeoutMs: 30000 });
+  const client = there(21001), peer = client.streams.control;
+  for (const now of [4000, 9000]) {
+    at(now); there(21001);
+    server.receive('control', envelope(21, 7, peer.remoteId, peer.localId), { address: peer.host, port: peer.port });
+    server.tick(); assert.equal(client.active, true);
+  }
+  at(10000); server.tick(); assert.equal(client.active, false);
+  at(14000); assert.notEqual(there(21001), client, 'discovery starts a new deadline after expiry');
+});
+
+test('bounded preauthentication admission evicts oldest unauthenticated association only', (t) => {
+  const { server, there, login, at } = admissionFixture(t, { preAuthMemoryBudgetBytes: 650000 });
+  const authenticated = there(21001); login(authenticated); assert.equal(authenticated.authenticated, true);
+  at(1); const oldest = there(21002);
+  at(2); const recent = there(21003);
+  at(3); const fresh = there(21004);
+  assert.equal(oldest.active, false); assert.equal(recent.active, true);
+  assert.equal(server.clients.size, 3); assert.equal(authenticated.active, true);
+  login(fresh); assert.equal(fresh.authenticated, true);
+  assert.equal(authenticated.active, true); assert.equal(server.stats.preAuthEvictions, 1);
+});
+
+test('unauthenticated peers cannot consume authenticated reservations and full login rejects cleanly', (t) => {
+  const reserve = 256 * 4096 * 6 + 256 * 1024 * 3;
+  const { server, sent, there, login } = admissionFixture(t, { memoryBudgetBytes: reserve });
+  for (let port = 21001; port <= 21018; port++) there(port);
+  const first = there(22001); login(first); assert.equal(first.authenticated, true);
+  const next = there(22002); login(next);
+  assert.equal(first.active, true); assert.equal(next.active, false);
+  assert.equal(server.stats.resourceRejects, 1);
+  const response = sent.filter((packet) => packet.length === 96).at(-1);
+  assert.equal(response.readUInt32BE(48), 0xfffffffe);
+  assert.equal(server.peers.control.has('127.0.0.1:22002'), false);
+});
+
+test('preauthentication constructor limits must be finite positive resource values', () => {
+  for (const options of [{ preAuthTimeoutMs: 0 }, { preAuthTimeoutMs: Infinity }, { preAuthMemoryBudgetBytes: -1 }, { preAuthMemoryBudgetBytes: NaN }, { maxPackets: 1.5 }]) {
+    assert.throws(() => new NativeServer({ username: 'beer', password: 'beer', ...options }), /Invalid/);
+  }
+});
+
+test('expired preauthentication cannot log in between maintenance ticks', (t) => {
+  const { server, there, login, at } = admissionFixture(t, { preAuthTimeoutMs: 10000 });
+  const client = there(21001);
+  at(10000); login(client);
+  assert.equal(client.active, false); assert.equal(client.authenticated, false);
+  assert.equal(server.stats.preAuthExpired, 1);
+});
+
+test('authentication rejection closes after the response send completes', (t) => {
+  const { server, there, login } = admissionFixture(t, { memoryBudgetBytes: 1 });
+  const client = there(21001);
+  let sentReply, complete;
+  server.sockets.control.send = (packet, _port, _host, done) => {
+    if (packet.length === 96) { sentReply = Buffer.from(packet); complete = done; }
+    else done?.();
+  };
+  login(client);
+  assert.equal(sentReply.readUInt32BE(48), 0xfffffffe);
+  assert.equal(client.active, true);
+  assert.equal(client.rejectingLogin, true);
+  server.options.memoryBudgetBytes = 128 * 1024 * 1024;
+  login(client); assert.equal(client.authenticated, false, 'a pending rejection cannot become a new login');
+  complete(); assert.equal(client.active, false);
+});
+
+
+test('default preauthentication pool admits eighteen simultaneous same-IP logins without eviction', (t) => {
+  const { server, there, login } = admissionFixture(t);
+  const clients = Array.from({ length: 18 }, (_, n) => there(23000 + n));
+  assert.equal(server.clients.size, 18);
+  assert.ok(clients.every((client) => client?.active));
+  assert.equal(server.stats.preAuthEvictions, 0);
+  for (const client of clients) login(client);
+  assert.ok(clients.every((client) => client.active && client.authenticated));
+  assert.equal(server.stats.preAuthEvictions, 0);
+  assert.equal(server.stats.resourceRejects, 0);
+});

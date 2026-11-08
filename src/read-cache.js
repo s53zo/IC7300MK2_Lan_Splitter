@@ -7,10 +7,14 @@ const bcd = (data) => [...data].every((v) => (v & 15) <= 9 && (v >> 4) <= 9);
 const decimal = (data) => [...data].reduce((n, v) => n * 100 + (v >> 4) * 10 + (v & 15), 0);
 const range = (min, max) => (data) => bcd(data) && decimal(data) >= min && decimal(data) <= max;
 const mode = (v) => [0, 1, 2, 3, 4, 5, 7, 8].includes(v);
-const add = (key, category, size, validate) => shapes.set(key, { category, size, validate });
+const add = (key, category, size, validate, prefix) => shapes.set(key, { category, size, validate, prefix });
 add('03', 'tuning', 5, bcd);
 add('04', 'tuning', 2, (d) => mode(d[0]) && d[1] >= 1 && d[1] <= 3);
 add('0f', 'tuning', 1, range(0, 1));
+add('10', 'settings', 1, range(0, 8));
+add('11', 'settings', 1, (d) => d[0] === 0 || d[0] === 0x20);
+// The bare RX antenna getter returns a fixed 00 subcommand before its value.
+add('12', 'settings', 2, (d) => d[0] === 0 && d[1] <= 1, Buffer.from([0]));
 for (const selector of ['00', '01']) {
   add(`25${selector}`, 'tuning', 5, bcd);
   add(`26${selector}`, 'tuning', 3, (d) => mode(d[0]) && d[1] <= 1 && d[2] >= 1 && d[2] <= 3);
@@ -37,7 +41,7 @@ add('271400', 'settings', 1, range(0, 3)); // Scope mode.
 add('271500', 'settings', 5, (d) => bcd(d) && [2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000].includes([...d].reverse().reduce((n, v) => n * 100 + (v >> 4) * 10 + (v & 15), 0)));
 add('271600', 'settings', 1, range(1, 4)); // Fixed edge.
 add('271700', 'settings', 1, range(0, 1)); // Hold.
-add('271900', 'settings', 3, (d) => range(0, 2000)(d.subarray(0, 2)) && d[1] % 16 === 0 && d[2] <= 1);
+add('271900', 'settings', 3, (d) => range(0, 2000)(d.subarray(0, 2)) && [0, 0x50].includes(d[1]) && d[2] <= 1);
 add('271a00', 'settings', 1, range(0, 2)); // Sweep speed.
 
 function body(bytes) {
@@ -55,7 +59,7 @@ function policyFor(bytes, ttlOptions = {}) {
   const option = `cache${shape.category[0].toUpperCase()}${shape.category.slice(1)}Ms`;
   const ttlMs = ttlOptions[option] ?? defaults[shape.category];
   if (!Number.isFinite(ttlMs) || ttlMs <= 0) return null;
-  return { key, category: shape.category, ttlMs, prefix: Buffer.from(data.subarray(1)) };
+  return { key, category: shape.category, ttlMs, prefix: Buffer.from(shape.prefix ?? data.subarray(1)) };
 }
 
 function validReply(query, reply) {

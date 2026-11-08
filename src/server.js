@@ -30,13 +30,14 @@ class Peer extends IcomStream {
 
   handshake() { this.raw(P.packet(16, P.TYPE.HERE, this.localId, this.remoteId)); }
 
-  raw(p) {
-    if (!this.socket || this.failed) return;
-    if (this.pendingBytes + p.length > this.server.options.maxPendingBytes) { this.dropped++; return; }
+  raw(p, onSent) {
+    if (!this.socket || this.failed) { onSent?.(); return; }
+    if (this.pendingBytes + p.length > this.server.options.maxPendingBytes) { this.dropped++; onSent?.(); return; }
     this.pendingBytes += p.length;
     this.socket.send(p, this.port, this.host, (err) => {
       this.pendingBytes -= p.length;
       if (err && this.socket) this.fail('Client UDP send failed');
+      onSent?.();
     });
   }
 
@@ -78,7 +79,7 @@ class NativeServer extends EventEmitter {
   constructor(options = {}) {
     super();
     this.options = { bindAddress: '0.0.0.0', controlPort: 50001, civPort: 50002, audioPort: 50003,
-      timeoutMs: 15000, tokenTimeoutMs: 90000, reorderMs: 80, maxPackets: 256,
+      timeoutMs: 15000, tokenTimeoutMs: 90000, preAuthTimeoutMs: 10000, preAuthMemoryBudgetBytes: 8 * 1024 * 1024, reorderMs: 80, maxPackets: 256,
       maxPendingBytes: 256 * 1024, memoryBudgetBytes: 128 * 1024 * 1024,
       radioName: 'IC-7300MK2', radioAddress: 0xb6, now: () => performance.now(), ...options };
     // Retain only the wire credential comparison vectors on this side.
@@ -91,16 +92,25 @@ class NativeServer extends EventEmitter {
     }
     const ports = [this.options.controlPort, this.options.civPort, this.options.audioPort].filter(Boolean);
     if (new Set(ports).size !== ports.length) throw new Error('Listening ports must be distinct');
-    for (const name of ['timeoutMs', 'tokenTimeoutMs', 'reorderMs', 'maxPackets', 'maxPendingBytes', 'memoryBudgetBytes']) {
+    for (const name of ['timeoutMs', 'tokenTimeoutMs', 'preAuthTimeoutMs', 'reorderMs', 'maxPackets', 'maxPendingBytes', 'memoryBudgetBytes', 'preAuthMemoryBudgetBytes']) {
       if (!Number.isFinite(this.options[name]) || this.options[name] <= 0) throw new Error(`Invalid ${name}`);
     }
+    for (const name of ['maxPackets', 'maxPendingBytes', 'memoryBudgetBytes', 'preAuthMemoryBudgetBytes']) {
+      if (!Number.isSafeInteger(this.options[name])) throw new Error(`Invalid ${name}`);
+    }
+    // Before login only this control stream exists: no media or inbound
+    // reorder queue, and outbound responses are at most 96 bytes. Include
+    // bounded replay/response metadata and association overhead as well as
+    // queued UDP sends. This pool is additional to memoryBudgetBytes.
+    this.preAuthReservationBytes = this.options.maxPendingBytes
+      + this.options.maxPackets * (96 + 64) + 64 * (96 + 160) + 4096;
     this.radioId = this.options.radioId ? Buffer.from(this.options.radioId) : randomBytes(16);
     if (this.radioId.length !== 16) throw new Error('radioId must be 16 bytes');
     this.clients = new Map();
     this.peers = { control: new Map(), civ: new Map(), audio: new Map() };
     this.sockets = {};
     this.started = false;
-    this.stats = { malformed: 0, unauthenticated: 0, rejectedFormats: 0, rejectedAssociations: 0, resourceRejects: 0 };
+    this.stats = { malformed: 0, unauthenticated: 0, rejectedFormats: 0, rejectedAssociations: 0, resourceRejects: 0, preAuthEvictions: 0, preAuthExpired: 0 };
   }
 
   async start() {
@@ -131,17 +141,27 @@ class NativeServer extends EventEmitter {
     if (!h || !h.sender) { this.stats.malformed++; return; }
     const key = endpoint(remote.address, remote.port);
     let peer = this.peers[role].get(key);
+    if (peer && this.preAuthExpired(peer.client)) {
+      this.stats.preAuthExpired++;
+      this.disconnect(peer.client);
+      return;
+    }
     if (h.type === P.TYPE.THERE && p.length === 16 && h.receiver === 0) {
       if (peer && peer.remoteId !== h.sender) return;
       if (!peer) {
         let client;
         if (role === 'control') {
-          // Admission is based on a memory budget rather than a product-level
-          // client cap. Reserve worst-case three replay/reorder buffers.
-          const reserve = this.options.maxPackets * 4096 * 6 + this.options.maxPendingBytes * 3;
-          if ((this.clients.size + 1) * reserve > this.options.memoryBudgetBytes) { this.stats.resourceRejects++; return; }
+          // Discovery gets a separate bounded control-only pool. Eviction
+          // cannot displace an authenticated client or consume its reservation.
+          const reserve = this.preAuthReservationBytes;
+          if (reserve > this.options.preAuthMemoryBudgetBytes) { this.stats.resourceRejects++; return; }
+          const waiting = [...this.clients.values()].filter((c) => !c.authenticated);
+          while ((waiting.length + 1) * reserve > this.options.preAuthMemoryBudgetBytes) {
+            this.stats.preAuthEvictions++;
+            this.disconnect(waiting.shift());
+          }
           client = { id: randomBytes(8).toString('hex'), active: true, authenticated: false,
-            granted: false, address: remote.address, streams: {}, responses: new Map(), serialSeq: 0, audioSeq: 0, mediaGeneration: 0 };
+            granted: false, createdAt: this.options.now(), address: remote.address, streams: {}, responses: new Map(), serialSeq: 0, audioSeq: 0, mediaGeneration: 0 };
           this.clients.set(client.id, client);
         } else {
           const matching = [...this.clients.values()].filter((c) => c.active && c.authenticated && c.granted
@@ -223,7 +243,12 @@ class NativeServer extends EventEmitter {
     return p;
   }
 
+  preAuthExpired(client) {
+    return !client.authenticated && this.options.now() - client.createdAt >= this.options.preAuthTimeoutMs;
+  }
+
   control(client, p) {
+    if (client.rejectingLogin) return;
     if (![64, 128, 144].includes(p.length) || p[20] !== 1) return;
     const key = createHash('sha256').update(p.subarray(16)).digest('hex');
     if (client.authenticated && this.options.now() - client.lastAuth >= this.options.tokenTimeoutMs) { this.disconnect(client); return; }
@@ -241,6 +266,18 @@ class NativeServer extends EventEmitter {
       client.authId = Buffer.concat([p.subarray(26, 28), randomBytes(4)]);
       const reply = this.response(client, 96, 0, 1, p);
       reply.write('FTTH', 64, 'ascii');
+      const reserve = this.options.maxPackets * 4096 * 6 + this.options.maxPendingBytes * 3;
+      const authenticated = [...this.clients.values()].filter((c) => c.authenticated).length;
+      if (valid && (authenticated + 1) * reserve > this.options.memoryBudgetBytes) {
+        this.stats.resourceRejects++;
+        client.rejectingLogin = true;
+        reply.writeUInt32BE(0xfffffffe, 48);
+        // Finish queuing the native rejection before closing this association.
+        const peer = client.streams.control;
+        reply.writeUInt16LE(peer.txSeq++ & 65535, 6);
+        peer.raw(reply, () => this.disconnect(client));
+        return;
+      }
       if (!valid) reply.writeUInt32BE(0xfffffffe, 48);
       else { client.authenticated = true; client.lastAuth = this.options.now(); client.name = p.subarray(96, 112).toString('ascii').split('\0')[0]; }
       replies.push(reply);
@@ -345,6 +382,7 @@ class NativeServer extends EventEmitter {
   tick() {
     const now = this.options.now();
     for (const client of this.clients.values()) {
+      if (this.preAuthExpired(client)) { this.stats.preAuthExpired++; this.disconnect(client); continue; }
       if (client.authenticated && now - client.lastAuth >= this.options.tokenTimeoutMs) { this.disconnect(client); continue; }
       for (const peer of Object.values(client.streams)) { if (client.active) peer.tick(); }
     }

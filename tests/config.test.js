@@ -83,9 +83,37 @@ test('status snapshot exposes only redacted state and cache counters', () => {
             owner: { password: 'owner-secret' }, cacheSnapshot: () => cache },
     };
     assert.deepEqual(statusSnapshot(service), {
-        type: 'status', radio: { state: 'connected', connected: true },
+        type: 'status', nativeClients: { active: 0, authenticated: 0, preAuth: 0, granted: 0, civReady: 0, audioReady: 0 },
+        admission: { preAuthExpired: 0, preAuthEvictions: 0, resourceRejects: 0 },
+        connectedUpstreamSessions: 1, metrics: null, radio: { state: 'connected', connected: true },
         broker: { ready: true, queueDepth: 1, pending: true, txOwned: true }, cache,
     });
     const serialized = JSON.stringify(statusSnapshot(service));
     for (const secret of ['password', 'nonce', 'private-client', 'secret', 'options']) assert.ok(!serialized.includes(secret));
+});
+
+test('pending login resource bounds are explicit and separate from authenticated budget', () => {
+    const server = config(defaults).server;
+    assert.equal(server.preAuthTimeoutMs, 10000);
+    assert.equal(server.preAuthMemoryBudgetBytes, 8 * 1024 * 1024);
+    assert.equal(server.memoryBudgetBytes, 128 * 1024 * 1024);
+    for (const [key, value] of [['ICOM_PREAUTH_TIMEOUT_MS', '0'], ['ICOM_PREAUTH_TIMEOUT_MS', 'NaN'], ['ICOM_PREAUTH_MEMORY_MB', '0'], ['ICOM_PREAUTH_MEMORY_MB', '1.5']]) {
+        assert.throws(() => config({ ...defaults, [key]: value }), new RegExp(key));
+    }
+});
+
+test('status aggregates native client states without logging their identities', () => {
+    const { statusSnapshot } = require('../src/cli');
+    const service = { session: { state: 'connected', connected: true }, server: { clients: new Map([
+        [1, { active: true, authenticated: true, granted: true, serialOpen: true, rxEnable: true,
+            address: 'private-endpoint', name: 'private-name', streams: { civ: { ready: true }, audio: { ready: true } } }],
+        [2, { active: true, authenticated: false, granted: false, streams: {} }],
+        [3, { active: false, authenticated: true, streams: {} }],
+    ]) }, broker: { ready: true, queue: [], pending: null, owner: null,
+        cacheSnapshot: () => ({ enabled: true }), metricsSnapshot: () => ({ physicalTotal: 3 }) } };
+    const result = statusSnapshot(service);
+    assert.deepEqual(result.nativeClients, { active: 2, authenticated: 1, preAuth: 1, granted: 1, civReady: 1, audioReady: 1 });
+    assert.equal(result.connectedUpstreamSessions, 1);
+    assert.deepEqual(result.metrics, { physicalTotal: 3 });
+    assert.ok(!JSON.stringify(result).includes('private-'));
 });

@@ -52,6 +52,8 @@ function config(env = process.env) {
         radio: { host, username, password, ...radioPorts,
             timeoutMs: integer(env.ICOM_RADIO_TIMEOUT_MS, 'ICOM_RADIO_TIMEOUT_MS', 15000, 100, 300000) },
         server: { bindAddress, ...serverPorts,
+            preAuthTimeoutMs: integer(env.ICOM_PREAUTH_TIMEOUT_MS, 'ICOM_PREAUTH_TIMEOUT_MS', 10000, 100, 300000),
+            preAuthMemoryBudgetBytes: integer(env.ICOM_PREAUTH_MEMORY_MB, 'ICOM_PREAUTH_MEMORY_MB', 8, 1, 65536) * 1024 * 1024,
             memoryBudgetBytes: integer(env.ICOM_MEMORY_BUDGET_MB, 'ICOM_MEMORY_BUDGET_MB', 128, 8, 65536) * 1024 * 1024,
             timeoutMs: integer(env.ICOM_CLIENT_TIMEOUT_MS, 'ICOM_CLIENT_TIMEOUT_MS', 15000, 100, 300000) },
         broker: {

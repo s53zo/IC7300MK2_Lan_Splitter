@@ -5,6 +5,43 @@ const { policyFor, validReply } = require('../src/read-cache');
 const query = (hex, controller = 0xe0) => Buffer.concat([Buffer.from([0xfe, 0xfe, 0xb6, controller]), Buffer.from(hex, 'hex'), Buffer.from([0xfd])]);
 const reply = (hex, controller = 0xe0) => Buffer.concat([Buffer.from([0xfe, 0xfe, controller, 0xb6]), Buffer.from(hex, 'hex'), Buffer.from([0xfd])]);
 
+test('documented bare settings getters retain exact reply shapes and exclude setters', () => {
+  for (const hex of ['10', '11', '12']) {
+    assert.equal(policyFor(query(hex))?.ttlMs, 250, hex);
+    assert.equal(policyFor(query(hex))?.category, 'settings', hex);
+  }
+  assert.deepEqual(policyFor(query('12'))?.prefix, Buffer.from([0]));
+  for (const [q, r] of [['10', '1000'], ['10', '1008'], ['11', '1100'], ['11', '1120'], ['12', '120000'], ['12', '120001']]) {
+    assert.equal(validReply(query(q), reply(r)), true, r);
+    assert.equal(validReply(query(q), reply(`${r}00`)), false, `extra ${r}`);
+    assert.equal(validReply(query(q), reply(r.slice(0, -2))), false, `truncated ${r}`);
+  }
+  for (const [q, r] of [['10', '1009'], ['10', '100a'], ['11', '1101'], ['11', '1121'], ['12', '1201'], ['12', '120100'], ['12', '120002']]) assert.equal(validReply(query(q), reply(r)), false, r);
+  for (const hex of ['1000', '1008', '1100', '1120', '1200', '120000', '120001']) assert.equal(policyFor(query(hex)), null, hex);
+});
+
+test('scope reference levels use half-decibel steps within signed twenty-decibel bounds', () => {
+  for (const value of ['000000', '005000', '025001', '195000', '200000', '200001']) assert.equal(validReply(query('271900'), reply(`271900${value}`)), true, value);
+  for (const value of ['001000', '009000', '025100', '205000', '210000', '000002', '00fa00']) assert.equal(validReply(query('271900'), reply(`271900${value}`)), false, value);
+});
+
+test('independent radio fixture returns bare getter values and preserves setter state', () => {
+  const { IcomPeer } = require('./fixtures/icom-radio');
+  const radio = new IcomPeer();
+  const responses = [];
+  radio.replyCiv = (bytes) => responses.push(Buffer.from(bytes).toString('hex'));
+  for (const [command, expected] of [
+    ['10', '1000'], ['1008', 'fb'], ['10', '1008'], ['1009', 'fa'],
+    ['11', '1100'], ['1120', 'fb'], ['11', '1120'], ['1101', 'fa'],
+    ['12', '120000'], ['120001', 'fb'], ['12', '120001'],
+    ['1200', 'fa'], ['120100', 'fa'], ['120002', 'fa'],
+    ['120000', 'fb'], ['12', '120000']
+  ]) {
+    radio.civ(query(command));
+    assert.equal(responses.at(-1), expected, command);
+  }
+});
+
 test('exact read policy separates fast readings, tuning and operator settings', () => {
   for (const hex of ['1502', '1507', '1511', '1512', '1513', '1514', '1515', '1516']) assert.equal(policyFor(query(hex)).ttlMs, 100);
   for (const hex of ['1c00', '1c01']) assert.equal(policyFor(query(hex)).category, 'state');

@@ -17,6 +17,8 @@ Optional:
   ICOM_RADIO_CONTROL_PORT / ICOM_RADIO_CIV_PORT / ICOM_RADIO_AUDIO_PORT
                        Defaults: 50001 / 50002 / 50003 (UDP)
   ICOM_MEMORY_BUDGET_MB   Client buffer reservation budget; default 128 MiB
+  ICOM_PREAUTH_TIMEOUT_MS  Absolute login deadline; default 10000
+  ICOM_PREAUTH_MEMORY_MB   Separate pending-login budget; default 8 MiB
   ICOM_CLIENT_TIMEOUT_MS  Downstream heartbeat timeout; default 15000
   ICOM_RADIO_TIMEOUT_MS   Upstream heartbeat timeout; default 15000
   ICOM_COMMAND_TIMEOUT_MS CI-V transaction timeout; default 2000
@@ -32,9 +34,27 @@ Do not put passwords in command arguments or committed configuration files.
 Stop with Ctrl+C or SIGTERM; normal shutdown attempts confirmed TX release.
 `;
 
+function nativeClientCounts(server) {
+    const counts = { active: 0, authenticated: 0, preAuth: 0, granted: 0, civReady: 0, audioReady: 0 };
+    for (const client of server?.clients?.values() || []) {
+        if (!client.active) continue;
+        counts.active++;
+        if (client.authenticated) counts.authenticated++; else counts.preAuth++;
+        if (client.granted) counts.granted++;
+        if (client.serialOpen && client.streams?.civ?.ready) counts.civReady++;
+        if (client.rxEnable && client.streams?.audio?.ready) counts.audioReady++;
+    }
+    return counts;
+}
+
 function statusSnapshot(service) {
     return {
         type: 'status',
+        nativeClients: nativeClientCounts(service.server),
+        admission: { preAuthExpired: service.server?.stats?.preAuthExpired || 0,
+            preAuthEvictions: service.server?.stats?.preAuthEvictions || 0, resourceRejects: service.server?.stats?.resourceRejects || 0 },
+        connectedUpstreamSessions: service.session.connected ? 1 : 0,
+        metrics: service.broker.metricsSnapshot?.() || null,
         radio: { state: service.session.state, connected: Boolean(service.session.connected) },
         broker: {
             ready: Boolean(service.broker.ready), queueDepth: service.broker.queue.length,

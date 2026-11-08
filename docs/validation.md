@@ -220,3 +220,22 @@ the fixture's main-scope getter replies to include the selector and value.
 No audio retransmission, resampling or buffering policy is changed by this cache.
 Live savings are recorded through the redacted SIGUSR2 counters rather than
 promised from the earlier request-rate estimate.
+
+## Audit follow-up — 2026-11-08
+
+All 135 local tests pass, with lint, syntax checks and package dry-run passing.
+An independent review approved the metrics and asynchronous safety integration.
+The unmodified wfweb executable passed the synthetic-radio probe again (300 audio
+packets and 60 scope packets forwarded); this does not validate audible playback.
+
+New regressions cover obsolete RX/tuner polls racing a new TX incarnation,
+exact bare 10/11/12 getters versus setters, reference-level half-dB validation,
+absolute unauthenticated expiry and separate admission budgets, and 18 concurrent
+same-IP logins. A timed client trace produces identical addressed replies with
+four physical reads when caching is enabled versus eight when disabled.
+Accounting tests independently reconcile delivered replies, physical commands,
+cancellation before/after dispatch and queue latency crossing 350 ms.
+
+No TTL or audio-path changes are included. More complex sharing across a future
+queued write remains conditional on measured opportunities after getter fixes.
+No physical transmission tests were performed for this follow-up.

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 const { EventEmitter } = require('node:events');
 const { policyFor, validReply } = require('./read-cache');
+const { BrokerMetrics } = require('./metrics');
 
 const PREAMBLE = Buffer.from([0xfe, 0xfe]);
 const controller = 0xe0;
@@ -77,6 +78,8 @@ class Broker extends EventEmitter {
       if (!Number.isSafeInteger(this.options[key]) || this.options[key] < 0 || this.options[key] > 1000) throw new Error(`Invalid broker ${key}`);
     }
     if (typeof this.options.cacheEnabled !== 'boolean' || typeof this.options.now !== 'function') throw new Error('Invalid read-cache options');
+    this.metrics = new BrokerMetrics(this.options.now);
+    this.coherenceEpoch = 0;
     this.readCache = new Map();
     this.cacheEpoch = 0;
     this.requestSerial = 0;
@@ -90,6 +93,7 @@ class Broker extends EventEmitter {
     this.lease = null;
     this.txObligations = new Set();
     this.activeTriggers = new Set();
+    this.txIncarnation = 0;
     this.observedTx = false;
     this.releasing = false;
     this.stopRequested = false;
@@ -110,8 +114,17 @@ class Broker extends EventEmitter {
   }
 
   cacheSnapshot() {
-    return { enabled: this.options.cacheEnabled, entries: this.readCache.size, epoch: this.cacheEpoch,
+    return { ttlMs: { meters: this.options.cacheMetersMs, state: this.options.cacheStateMs, settings: this.options.cacheSettingsMs, tuning: this.options.cacheTuningMs }, enabled: this.options.cacheEnabled, entries: this.readCache.size, epoch: this.cacheEpoch,
       ...this.cacheStats, byQuery: Object.fromEntries([...this.cacheByQuery].map(([key, value]) => [key, { ...value }])) };
+  }
+
+  metricsSnapshot() {
+    const snapshot = this.metrics.snapshot();
+    snapshot.eligible.queued = this.queue.filter((item) => !item.internal && item.cachePolicy).length;
+    snapshot.eligible.inFlight = this.pending && !this.pending.internal && this.pending.cachePolicy ? 1 : 0;
+    snapshot.transport = Object.fromEntries(['control', 'serial', 'audio'].map((role) => [role,
+      Object.fromEntries(['malformed', 'stale', 'duplicates', 'lost', 'replayed'].map((key) => [key, this.session[role]?.counters?.[key] || 0]))]));
+    return snapshot;
   }
 
   cachePolicy(bytes) {
@@ -126,20 +139,33 @@ class Broker extends EventEmitter {
     ++this.cacheByQuery.get(policy.key)[kind];
   }
 
-  invalidateReads() {
+  clearReadEntries(reason) {
+    const removed = this.readCache.size;
     this.readCache.clear();
+    this.metrics.reason('invalidations', reason);
+    this.metrics.invalidationEntries.removed += removed;
+    if (!removed) this.metrics.invalidationEntries.empty++;
+    if (reason !== 'mutation_admission') ++this.coherenceEpoch;
+  }
+
+  invalidateReads(reason = 'other') {
+    this.clearReadEntries(reason);
     ++this.cacheEpoch;
     ++this.cacheStats.invalidations;
   }
 
   cachedReply(item) {
-    if (!item.cachePolicy || item.cacheEpoch !== this.cacheEpoch) return null;
+    if (!item.cachePolicy) return null;
+    if (item.cacheEpoch !== this.cacheEpoch) { this.metrics.reason('misses', 'admission_epoch', item.cachePolicy); return null; }
     const entry = this.readCache.get(item.cachePolicy.key);
-    if (!entry) return null;
-    if (entry.epoch !== this.cacheEpoch || entry.generation !== this.generation || this.options.now() >= entry.expiresAt) {
-      this.readCache.delete(item.cachePolicy.key);
-      return null;
+    if (!entry) { this.metrics.reason('misses', 'absent', item.cachePolicy); return null; }
+    const now = this.options.now();
+    const reason = entry.epoch !== this.cacheEpoch ? 'entry_epoch' : entry.generation !== this.generation ? 'generation' : now >= entry.expiresAt ? 'expired' : null;
+    if (reason) {
+      this.metrics.reason('misses', reason, item.cachePolicy);
+      this.readCache.delete(item.cachePolicy.key); return null;
     }
+    this.metrics.hit(item, entry, now - entry.filledAt);
     this.countCache(item.cachePolicy, 'hits');
     if (item.serial <= entry.filledThroughSerial) this.countCache(item.cachePolicy, 'coalesced');
     return Buffer.from(entry.reply);
@@ -147,27 +173,53 @@ class Broker extends EventEmitter {
 
   rememberReply(item, bytes) {
     const policy = item.cachePolicy || this.cachePolicy(item.bytes);
-    if (!policy || !this.ready || this.synchronizing || this.releasing || this.stopRequested
-      || item.cacheEpoch !== this.cacheEpoch) return;
-    if (!validReply(item.bytes, bytes)) { this.readCache.delete(policy.key); return; }
+    if (!policy) {
+      const known = policyFor(item.bytes);
+      this.metrics.reason('storeSkips', !this.options.cacheEnabled ? 'disabled' : known ? 'family_disabled' : 'unknown_query', known);
+      return;
+    }
+    if (!this.ready || this.synchronizing || this.releasing || this.stopRequested) {
+      this.metrics.reason('storeSkips', 'unstable', policy); return;
+    }
+    if (item.cacheEpoch !== this.cacheEpoch) {
+      this.metrics.reason('storeSkips', 'admission_epoch', policy);
+      if (item.coherenceAtDispatch === this.coherenceEpoch && validReply(item.bytes, bytes)) {
+        for (const queued of this.queue) {
+          if (!queued.policy.read) break;
+          if (!queued.internal && queued.cachePolicy?.key === policy.key && queued.cacheEpoch === item.cacheEpoch
+            && !queued.suppressedSharingCounted && queued.client.active !== false
+            && queued.mediaGeneration === queued.client.mediaGeneration) {
+            queued.suppressedSharingCounted = true; this.metrics.suppressedQueuedReads++;
+          }
+        }
+      }
+      return;
+    }
+    if (!validReply(item.bytes, bytes)) {
+      this.metrics.reason('storeSkips', 'invalid_reply', policy);
+      this.readCache.delete(policy.key); return;
+    }
     this.readCache.delete(policy.key);
-    this.readCache.set(policy.key, { reply: Buffer.from(bytes), epoch: this.cacheEpoch,
-      generation: this.generation, expiresAt: this.options.now() + policy.ttlMs,
+    const filledAt = this.options.now();
+    this.readCache.set(policy.key, { reply: Buffer.from(bytes), epoch: this.cacheEpoch, filledAt, fillOrigin: item.internal ? item.purpose : 'client',
+      generation: this.generation, expiresAt: filledAt + policy.ttlMs,
       filledThroughSerial: this.requestSerial });
-    while (this.readCache.size > this.options.maxCacheEntries) this.readCache.delete(this.readCache.keys().next().value);
+    while (this.readCache.size > this.options.maxCacheEntries) { this.readCache.delete(this.readCache.keys().next().value); this.metrics.evictions++; }
   }
 
   sendReadReply(item, bytes) {
-    if (item.client.active === false || item.mediaGeneration !== item.client.mediaGeneration) return;
+    if (item.client.active === false || item.mediaGeneration !== item.client.mediaGeneration) return false;
     const reply = Buffer.from(bytes);
     reply[2] = item.bytes[3];
     this.server.sendCiv(item.client, reply);
+    return true;
   }
 
   start() { if (this.session.connected && !this.synchronizing && !this.ready) this.synchronize(); return this; }
 
-  invalidateTx() {
-    this.invalidateReads();
+  invalidateTx(reason = 'tx_transition') {
+    this.advanceTxIncarnation();
+    this.invalidateReads(reason);
     if (this.owner) {
       this.server.retireClientWork?.(this.owner);
       this.parsers.get(this.owner)?.reset();
@@ -183,7 +235,7 @@ class Broker extends EventEmitter {
     this.synchronizing = false;
     this.releasing = false;
     this.stopRequested = false;
-    this.invalidateTx();
+    this.invalidateTx('lifecycle');
     this.owner = null;
     this.lease = null;
     this.activeTriggers.clear();
@@ -194,11 +246,11 @@ class Broker extends EventEmitter {
     this.emit('status', { state: 'disconnected' });
   }
 
-  cancelAll(error) {
+  cancelAll(error, reason = 'session_loss') {
     const work = [...this.queue];
     this.queue = [];
     if (this.pending) { clearTimeout(this.pending.timer); work.unshift(this.pending); this.pending = null; }
-    for (const item of work) this.reject(item, error);
+    for (const item of work) this.reject(item, error, reason);
   }
 
   reset(error) {
@@ -217,15 +269,15 @@ class Broker extends EventEmitter {
     try {
       // A fresh association prevents stale acknowledgements from earlier
       // sessions confirming these cleanup commands. No mode/routing changes.
-      await this.internal([0x1c, 0, 0]);
-      await this.stopKeyer();
-      await this.stopInitiators();
-      const result = await this.internal([0x1c, 0]);
+      await this.internal([0x1c, 0, 0], false, false, 'startup');
+      await this.stopKeyer(false, 'startup');
+      await this.stopInitiators(false, 'startup');
+      const result = await this.internal([0x1c, 0], false, false, 'startup');
       if (result[6] !== 0) throw new Error('Radio has not confirmed receive state');
       // Output subscriptions belong to the splitter. One client turning off
       // its waterfall must not stop the stream for all other clients.
-      await this.internal([0x27, 0x10, 1]);
-      await this.internal([0x27, 0x11, 1]);
+      await this.internal([0x27, 0x10, 1], false, false, 'startup');
+      await this.internal([0x27, 0x11, 1], false, false, 'startup');
       if (generation !== this.generation || this.closed) return;
       this.txObligations.clear();
       this.activeTriggers.clear();
@@ -240,18 +292,19 @@ class Broker extends EventEmitter {
     }
   }
 
-  internal(payload, allowNG = false, priority = false) {
+  internal(payload, allowNG = false, priority = false, purpose = 'internal') {
     return new Promise((resolve, reject) => {
       const bytes = frame(this.options.address, payload);
       const policy = classify(bytes);
-      if (!policy.read) this.invalidateReads();
-      const item = { bytes, policy, internal: true, allowNG, resolve, reject, generation: this.generation, cacheEpoch: this.cacheEpoch };
+      if (!policy.read) this.invalidateReads('mutation_admission');
+      const item = { bytes, policy, internal: true, purpose, allowNG, resolve, reject, generation: this.generation, cacheEpoch: this.cacheEpoch };
       if (priority) this.queue.unshift(item); else this.queue.push(item);
       this.pump();
     });
   }
 
-  negative(client, bytes) {
+  negative(client, bytes, beforeAdmission = true, reason = 'other') {
+    if (beforeAdmission) { this.metrics.logical.rejectedBeforeAdmission++; this.metrics.reason('rejected', reason); }
     this.stats.rejected++;
     if (client?.active !== false) this.server.sendCiv(client, Buffer.from([0xfe, 0xfe, bytes[3], this.options.address, 0xfa, 0xfd]));
   }
@@ -271,7 +324,7 @@ class Broker extends EventEmitter {
     let parser = this.parsers.get(client);
     if (!parser) { parser = new FrameParser(); this.parsers.set(client, parser); }
     for (const bytes of parser.push(chunk)) {
-      if (bytes[2] !== this.options.address && bytes[2] !== 0) { this.negative(client, bytes); continue; }
+      if (bytes[2] !== this.options.address && bytes[2] !== 0) { this.negative(client, bytes, true, 'invalid_radio'); continue; }
       const policy = classify(bytes);
       const urgent = this.owner === client && Boolean(policy.release) && this.allowed(client, policy);
       if (urgent) {
@@ -280,11 +333,11 @@ class Broker extends EventEmitter {
         // priority position without preempting the in-flight CI-V reply.
         const keep = [];
         for (const item of this.queue) {
-          if (item.client === client) this.reject(item, new Error('Owner requested TX stop'));
+          if (item.client === client) this.reject(item, new Error('Owner requested TX stop'), 'tx_transition');
           else keep.push(item);
         }
         this.queue = keep;
-        if (this.queue.length >= this.options.maxQueued) this.reject(this.queue.pop(), new Error('TX stop needs queue capacity'));
+        if (this.queue.length >= this.options.maxQueued) this.reject(this.queue.pop(), new Error('TX stop needs queue capacity'), 'queue_capacity');
         if (policy.release === 'ptt') {
           this.stopRequested = true;
           this.invalidateTx();
@@ -292,23 +345,27 @@ class Broker extends EventEmitter {
       }
       const count = this.queue.reduce((n, item) => n + (item.client === client ? 1 : 0), this.pending?.client === client ? 1 : 0);
       if (!this.allowed(client, policy) || (!urgent && (this.queue.length >= this.options.maxQueued || count >= this.options.maxPerClient))) {
-        this.negative(client, bytes);
+        this.negative(client, bytes, true, !this.allowed(client, policy) ? 'permission' : 'queue_capacity');
         continue;
       }
-      if (!policy.read) this.invalidateReads();
+      if (!policy.read) this.invalidateReads('mutation_admission');
       const cachePolicy = this.cachePolicy(bytes);
       if (cachePolicy) this.countCache(cachePolicy, 'requests');
       this.stats.commands++;
       const item = { client, bytes, policy, generation: this.generation, mediaGeneration: client.mediaGeneration,
         cachePolicy, cacheEpoch: this.cacheEpoch, serial: ++this.requestSerial };
+      this.metrics.admit(item);
       if (urgent) this.queue.unshift(item); else this.queue.push(item);
       this.pump();
     }
   }
 
-  reject(item, error) {
+  reject(item, error, reason = 'other') {
     if (item.internal) item.reject(error);
-    else if (item.mediaGeneration === item.client.mediaGeneration) this.negative(item.client, item.bytes);
+    else {
+      this.metrics.finish(item, 'cancelled', reason);
+      if (item.mediaGeneration === item.client.mediaGeneration) this.negative(item.client, item.bytes, false);
+    }
   }
 
   pump() {
@@ -316,21 +373,29 @@ class Broker extends EventEmitter {
     while (this.queue.length) {
       const item = this.queue.shift();
       if (item.generation !== this.generation || (!item.internal && (!this.allowed(item.client, item.policy) || item.mediaGeneration !== item.client.mediaGeneration))) {
-        this.reject(item, new Error('Command no longer permitted'));
+        const reason = item.generation !== this.generation ? 'session_loss' : item.client?.active === false ? 'client_disconnect'
+          : item.mediaGeneration !== item.client?.mediaGeneration ? 'media_generation' : 'permission';
+        this.reject(item, new Error('Command no longer permitted'), reason);
         continue;
       }
       if (!item.internal && item.bytes[4] === 0x27 && [0x10, 0x11].includes(item.bytes[5])
         && (item.bytes.length === 7 || (item.bytes.length === 8 && [0, 1].includes(item.bytes[6])))) {
         const response = item.policy.read ? [0x27, item.bytes[5], 1] : [0xfb];
         this.server.sendCiv(item.client, Buffer.from([0xfe, 0xfe, item.bytes[3], this.options.address, ...response, 0xfd]));
+        this.metrics.local(item); this.metrics.finish(item, 'completed');
         continue;
       }
       if (!item.internal) {
         const cached = this.cachedReply(item);
-        if (cached) { this.sendReadReply(item, cached); continue; }
+        if (cached) {
+          const delivered = this.sendReadReply(item, cached);
+          this.metrics.finish(item, delivered ? 'completed' : 'cancelled', item.client.active === false ? 'client_disconnect' : 'media_generation');
+          continue;
+        }
       }
-      if (!item.policy.read) this.readCache.clear();
+      if (!item.policy.read) this.clearReadEntries('mutation_dispatch');
       if (!item.internal && item.cachePolicy) this.countCache(item.cachePolicy, 'misses');
+      if (!item.internal && item.policy.tx) this.advanceTxIncarnation();
       if (!item.internal && item.policy.tx && !this.owner) {
         this.owner = item.client;
         this.server.retireAudio?.(this.owner);
@@ -338,7 +403,7 @@ class Broker extends EventEmitter {
         // Work received after the TX request must not execute after its end.
         const keep = [];
         for (const queued of this.queue) {
-          if (!queued.internal && queued.client !== this.owner && !queued.policy.read) this.reject(queued, new Error('Another client owns TX'));
+          if (!queued.internal && queued.client !== this.owner && !queued.policy.read) this.reject(queued, new Error('Another client owns TX'), 'tx_transition');
           else keep.push(queued);
         }
         this.queue = keep;
@@ -350,16 +415,19 @@ class Broker extends EventEmitter {
       bytes[3] = controller;
       this.pending = item;
       if (!item.policy.oneWay) item.timer = setTimeout(() => {
-        if (this.pending === item) this.reset(new Error('CI-V reply timed out; resetting upstream session'));
+        if (this.pending === item) { this.metrics.radioTimeouts++; this.reset(new Error('CI-V reply timed out; resetting upstream session')); }
       }, this.options.requestTimeoutMs);
+      item.coherenceAtDispatch = this.coherenceEpoch;
+      this.metrics.start(item, item.internal ? item.purpose : item.policy.read ? 'clientRead' : 'clientWrite');
       try { this.session.sendCiv(bytes, { group: 'transaction' }); }
-      catch (error) { this.reset(error); return; }
+      catch (error) { this.metrics.physicalSendErrors++; this.reset(error); return; }
       if (item.policy.oneWay) {
         // Transceive writes have no ACK by definition. The transport still
         // preserves ordering and TX ownership checks.
         this.pending = null;
         this.session.serial?.invalidate('transaction');
         this.broadcastState(bytes);
+        this.metrics.finish(item, 'completed');
         continue;
       }
       return;
@@ -406,23 +474,23 @@ class Broker extends EventEmitter {
         this.server.broadcastCiv(scope); continue;
       }
       if (bytes[2] === 0 || cmd === 0 || cmd === 1) {
-        this.invalidateReads();
+        this.invalidateReads('notification');
         this.server.broadcastCiv(bytes); continue;
       }
       if (bytes[2] !== controller) continue;
       if (!this.pending) {
-        if (cmd !== 0xfb && cmd !== 0xfa) this.invalidateReads();
+        if (cmd !== 0xfb && cmd !== 0xfa) this.invalidateReads('notification');
         continue;
       }
       const item = this.pending;
       const ack = cmd === 0xfb || cmd === 0xfa;
       if (ack && bytes.length !== 6) continue;
       if (!ack) {
-        if (cmd !== item.bytes[4]) { this.invalidateReads(); continue; }
+        if (cmd !== item.bytes[4]) { this.invalidateReads('notification'); continue; }
         const prefix = item.policy.prefix;
         const minData = item.policy.read ? (cmd === 3 ? 5 : cmd === 4 ? 2 : prefix.length + 1) : 0;
         if (bytes.length < 6 + minData) continue;
-        if (prefix.length && !bytes.subarray(5, 5 + prefix.length).equals(prefix)) { this.invalidateReads(); continue; }
+        if (prefix.length && !bytes.subarray(5, 5 + prefix.length).equals(prefix)) { this.invalidateReads('notification'); continue; }
       }
       // Read commands require their actual data; an ACK cannot be their
       // answer. NG does terminate a rejected read.
@@ -430,18 +498,20 @@ class Broker extends EventEmitter {
       clearTimeout(item.timer);
       this.pending = null;
       this.session.serial?.invalidate('transaction');
-      if (cmd === 0xfa) this.invalidateReads();
+      this.metrics.reply(item);
+      if (cmd === 0xfa) this.invalidateReads('negative_reply');
       if (cmd === 0x1c && bytes[5] === 0 && bytes.length >= 8) {
-        if (this.observedTx !== Boolean(bytes[6])) this.invalidateReads();
+        if (this.observedTx !== Boolean(bytes[6])) this.invalidateReads('observed_tx');
         this.observedTx = Boolean(bytes[6]);
       }
-      if (!item.policy.read) this.readCache.clear();
+      if (!item.policy.read) this.clearReadEntries('mutation_outcome');
       if (cmd !== 0xfa && cmd !== 0xfb) this.rememberReply(item, bytes);
       if (item.internal) {
         if (cmd === 0xfa && !item.allowNG) item.reject(new Error('Radio rejected safety/query command'));
         else item.resolve(bytes);
       } else {
-        this.sendReadReply(item, bytes);
+        const delivered = this.sendReadReply(item, bytes);
+        this.metrics.finish(item, delivered ? 'completed' : 'cancelled', item.client.active === false ? 'client_disconnect' : 'media_generation', cmd === 0xfa);
         if (cmd !== 0xfa) {
           this.broadcastState(item.policy.read ? bytes : item.bytes);
           if (item.bytes[4] === 0x16 && item.bytes[5] === 0x46 && item.bytes[6] === 0) this.txObligations.delete('vox');
@@ -490,7 +560,7 @@ class Broker extends EventEmitter {
     this.parsers.delete(client);
     const keep = [];
     for (const item of this.queue) {
-      if (item.client === client) this.reject(item, new Error('Client disconnected'));
+      if (item.client === client) this.reject(item, new Error('Client disconnected'), 'client_disconnect');
       else keep.push(item);
     }
     this.queue = keep;
@@ -511,15 +581,15 @@ class Broker extends EventEmitter {
         // commands, retain reads from other clients and reject their writes.
         const keep = [];
         for (const item of this.queue) {
-          if (!item.internal && (!item.policy.read || item.client === this.owner)) this.reject(item, new Error('TX lease ending'));
+          if (!item.internal && (!item.policy.read || item.client === this.owner)) this.reject(item, new Error('TX lease ending'), 'tx_transition');
           else keep.push(item);
         }
         this.queue = keep;
         if (!this.session.connected) return;
-        await this.internal([0x1c, 0, 0], false, true);
-        await this.stopKeyer(true);
-        await this.stopInitiators(true);
-        const result = await this.internal([0x1c, 0], false, true);
+        await this.internal([0x1c, 0, 0], false, true, 'release');
+        await this.stopKeyer(true, 'release');
+        await this.stopInitiators(true, 'release');
+        const result = await this.internal([0x1c, 0], false, true, 'release');
         if (result[6] !== 0) throw new Error('Radio has not confirmed TX release');
         if (generation !== this.generation) return;
         this.owner = null;
@@ -540,23 +610,29 @@ class Broker extends EventEmitter {
   }
 
   updateLease() {
+    this.advanceTxIncarnation();
     // Independent initiators can coexist for one client. A persistent PTT
     // or VOX trigger must not disappear when the client enables/stops an
     // automatic source (or when VOX is toggled during explicit PTT).
     this.lease = ['ptt', 'vox', 'voice', 'tuner', 'cw'].find((kind) => this.activeTriggers.has(kind)) || null;
   }
 
-  async stopKeyer(priority = false) {
-    // The physical MK2 rejects 17 FF outside CW/CW-R. Do not manufacture
-    // an avoidable NG or change the operator's mode just for cleanup.
-    const mode = await this.internal([0x04], false, priority);
-    if (mode[5] === 3 || mode[5] === 7) await this.internal([0x17, 0xff], false, priority);
+  advanceTxIncarnation() {
+    ++this.txIncarnation;
+    this.receivePolls = 0;
   }
 
-  async stopInitiators(priority = false) {
-    if (this.txObligations.has('voice')) await this.internal([0x28, 0, 0], false, priority);
-    if (this.txObligations.has('tuner')) await this.internal([0x1c, 1, 0], false, priority);
-    if (this.txObligations.has('vox')) await this.internal([0x16, 0x46, 0], false, priority);
+  async stopKeyer(priority = false, purpose = 'internal') {
+    // The physical MK2 rejects 17 FF outside CW/CW-R. Do not manufacture
+    // an avoidable NG or change the operator's mode just for cleanup.
+    const mode = await this.internal([0x04], false, priority, purpose);
+    if (mode[5] === 3 || mode[5] === 7) await this.internal([0x17, 0xff], false, priority, purpose);
+  }
+
+  async stopInitiators(priority = false, purpose = 'internal') {
+    if (this.txObligations.has('voice')) await this.internal([0x28, 0, 0], false, priority, purpose);
+    if (this.txObligations.has('tuner')) await this.internal([0x1c, 1, 0], false, priority, purpose);
+    if (this.txObligations.has('vox')) await this.internal([0x16, 0x46, 0], false, priority, purpose);
   }
 
   poll() {
@@ -564,15 +640,24 @@ class Broker extends EventEmitter {
     if (this.polling) return;
     this.polling = true;
     const generation = this.generation;
-    this.internal([0x1c, 0], false, true).then(async (bytes) => {
-      if (generation !== this.generation) return;
+    const owner = this.owner, incarnation = this.txIncarnation;
+    const current = () => generation === this.generation && owner === this.owner
+      && incarnation === this.txIncarnation && this.ready && !this.releasing
+      && !this.stopRequested && this.session.connected && !this.closed;
+    const started = () => Number.isFinite(this.lastTxRequest)
+      && performance.now() - this.lastTxRequest > this.options.autoStartGraceMs;
+    this.internal([0x1c, 0], false, true, 'periodicPoll').then(async (bytes) => {
+      // receive() may dispatch a queued start before this continuation runs.
+      // Even the same owner restarting a trigger makes this sample obsolete.
+      if (!current()) return;
       if (bytes[6]) this.receivePolls = 0;
       else this.receivePolls = (this.receivePolls || 0) + 1;
-      if (!this.owner || this.receivePolls < 3 || performance.now() - this.lastTxRequest <= this.options.autoStartGraceMs) return;
+      if (!owner || this.receivePolls < 3 || !started()) return;
       if (this.lease === 'cw' && performance.now() >= this.cwDeadline) this.release();
-      if (this.lease === 'tuner') {
-        const tuner = await this.internal([0x1c, 1], false, true);
-        if (generation === this.generation && this.lease === 'tuner' && tuner[6] !== 2) this.release();
+      if (this.lease === 'tuner' && this.activeTriggers.has('tuner')) {
+        const tuner = await this.internal([0x1c, 1], false, true, 'periodicPoll');
+        if (current() && started() && this.lease === 'tuner'
+          && this.activeTriggers.has('tuner') && tuner[6] !== 2) this.release();
       }
       // Voice memories may repeat after arbitrarily long silence. Their
       // owner must send the explicit stop command (or disconnect); a quiet

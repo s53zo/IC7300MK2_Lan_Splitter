@@ -226,6 +226,17 @@ class IcomPeer extends EventEmitter {
     } else if (cmd === 0x0f) {
       if (!bytes.length) response = [cmd, this.settings.get('split') ?? 0];
       else this.settings.set('split', bytes[0]);
+    } else if (cmd === 0x10 || cmd === 0x11) {
+      // MK2 starred getters are bare commands; setters append one value byte.
+      const valid = cmd === 0x10 ? bytes[0] <= 8 : bytes[0] === 0 || bytes[0] === 0x20;
+      if (!bytes.length) response = [cmd, this.settings.get(cmd) ?? 0];
+      else if (bytes.length === 1 && valid) this.settings.set(cmd, bytes[0]);
+      else response = [0xfa];
+    } else if (cmd === 0x12) {
+      // A bare getter returns fixed subcommand 00 followed by RX antenna state.
+      if (!bytes.length) response = [cmd, 0, this.settings.get('rx-antenna') ?? 0];
+      else if (bytes.length === 2 && bytes[0] === 0 && bytes[1] <= 1) this.settings.set('rx-antenna', bytes[1]);
+      else response = [0xfa];
     } else if (cmd === 0x1a && [3, 4].includes(bytes[0])) {
       const key = `1a${bytes[0]}`;
       if (bytes.length === 1) response = [cmd, bytes[0], this.settings.get(key) ?? 0];

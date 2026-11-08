@@ -134,3 +134,22 @@ Cleanup is mode-aware: it releases PTT, queries the actual mode, and requires CW
 keyer stop only in CW/CW-R. The physical MK2 rejects CW-stop in other modes. A
 failed mode read or rejected stop in CW prevents readiness/handover instead of
 being treated as a successful release. The operator's mode is not changed.
+
+## Audit follow-up safeguards
+
+Safety polls bind their results to the owner/trigger incarnation sampled when the
+query began. A queued start, restart or trigger change invalidates earlier poll
+continuations even when the same client remains owner. Tuner completion requires
+an acknowledged active trigger, a finite start time, elapsed startup grace and a
+matching incarnation after its follow-up status query.
+
+Bare tuning-step (`10`), attenuator (`11`) and RX-antenna (`12`) getters are reads,
+not mutation barriers; their setters remain barriers. Bare `12` has a fixed `00`
+field in its reply before the antenna boolean. Scope reference values are
+validated in 0.5-dB steps.
+
+Read-cache coherence instrumentation distinguishes future mutation admission
+from actual state-changing dispatch/outcome, notifications and lifecycle changes.
+It only counts possible queued-result sharing; delivery still obeys the original
+mutation epochs, FIFO and TTL checks. No selective invalidation, cached-read
+shortcut or audio recovery/pacing change is enabled by this instrumentation.

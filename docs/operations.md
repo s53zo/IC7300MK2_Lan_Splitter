@@ -41,6 +41,8 @@ reference. There are no password command-line options.
 | `ICOM_CACHE_SETTINGS_MS` | Allowlisted public operator settings TTL, integer 0–1000 ms | `250` |
 | `ICOM_CACHE_TUNING_MS` | Frequency/mode/VFO TTL, integer 0–1000 ms | `50` |
 | `ICOM_MEMORY_BUDGET_MB` | Server replay/reorder/send memory budget, 8–65536 MiB | `128` |
+| `ICOM_PREAUTH_TIMEOUT_MS` | Absolute pending-login lifetime; discovery/pings do not extend it | `10000` |
+| `ICOM_PREAUTH_MEMORY_MB` | Separate control-only pending-login budget | `8` |
 
 Specify either `ICOM_PASSWORD_FILE` or `ICOM_PASSWORD`, not both. Password files
 may have one terminal LF or CRLF; spaces within the password are significant.
@@ -187,3 +189,63 @@ always be distinguished from a current packet within the same association.
 Do not enable packet dumps in normal operation. Login and token packets contain
 reversible credentials/session material. Share redacted state transitions and
 version information when reporting a fault.
+
+## Admission and diagnostic accounting
+
+Authenticated sessions retain the existing configurable reservation budget. A
+separate 8-MiB pending-login pool conservatively reserves control-only buffers
+(about 316 KiB each by default), allowing 25 simultaneous pending associations.
+The default authenticated budget allows roughly 18 sessions, so a normal
+all-client reconnect does not overflow the pending pool. Increase both budgets
+for larger simultaneous login bursts. There is no per-IP client limit.
+
+A pending association expires 10 seconds after creation even if it sends discovery
+or ping traffic. When the pending pool fills, its oldest unauthenticated peer is
+evicted; authenticated clients are not evicted. A successful login still needs
+available authenticated-session capacity. Rejected logins are sent their native
+error before closing.
+
+`SIGUSR2` status now includes aggregate native-client authentication/grant/media
+readiness counts and the number of connected upstream sessions. Browser users
+sharing one application backend can still represent one native radio client.
+Admission counters expose expired/evicted pending logins and resource refusals.
+No addresses, names, controller IDs, credentials or cached reply values are logged.
+
+`metrics.physical` separates client reads, client writes, periodic polls, startup,
+release and other internal dispatches. These count original CI-V dispatch attempts,
+not all UDP packets. Synchronous send errors, correlated responses and radio-reply
+timeouts are separate. Transport loss/duplicate/replay counters remain separate
+from CI-V transactions; a replay count is not another logical query.
+
+`metrics.logical` and `metrics.eligible` account for admitted, completed and
+cancelled work, including cancellation before versus after dispatch. Completion
+means a reply was attempted for the current client session, not proof of UDP
+receipt or audible playback. At quiescence admitted = completed + cancelled. The
+legacy eligible-cache counters reconcile as:
+
+```text
+cache.requests = cache.hits + cache.misses
+               + metrics.eligible.queued
+               + metrics.eligible.cancelledBeforeDispatch
+```
+
+An in-flight physical query already counts as a miss. `cache.coalesced` is a
+subset of hits. Detailed cache-hit counts distinguish a previously completed
+entry from a client or internal fill completed while the reader was queued.
+
+Bounded reason counters distinguish absent/expired/epoch entries, invalid reply
+shapes, disabled families, notifications, mutations, lifecycle events and NGs.
+`metrics.invalidationEntries` shows removed entries versus empty clears. Per-query
+reason counters use allowlisted keys only.
+
+Monotonic timing histograms cover queue wait, correlated radio RTT, reply time,
+successful reply time, cancelled wait and cache age. Each bucket is exclusive,
+selected by its upper bound; the final null bound means overflow. The 350-ms
+threshold helps investigate short client deadlines. These timings cover gateway
+work, not the client's network or sound device.
+
+`metrics.suppressedQueuedReads` counts unique queued readers that had a validated
+pre-write sharing opportunity blocked by a future admitted mutation. It is an
+upper bound on a possible optimization, not queries already saved: later expiry,
+notifications or cancellation may prevent reuse. It does not enable speculative
+sharing. Keep current behavior until workload measurements justify that change.
