@@ -2,6 +2,7 @@
 
 // SPDX-License-Identifier: AGPL-3.0-only
 const { EventEmitter } = require('node:events');
+const { policyFor, validReply } = require('./read-cache');
 
 const PREAMBLE = Buffer.from([0xfe, 0xfe]);
 const controller = 0xe0;
@@ -51,6 +52,8 @@ function classify(bytes) {
   if (cmd === 0x1c && data[0] === 1 && data.length === 2) { tx = data[1] === 2 ? 'tuner' : null; release = data[1] !== 2 ? 'tuner' : false; }
   if (cmd === 0x28 && data[0] === 0 && data.length === 2) { tx = data[1] ? 'voice' : null; release = data[1] === 0 ? 'voice' : false; }
   if (cmd === 0x16 && data[0] === 0x46 && data.length === 2) { tx = data[1] ? 'vox' : null; release = data[1] === 0 ? 'vox' : false; }
+  const cacheRead = policyFor(bytes);
+  if (cacheRead) { read = true; prefix = cacheRead.prefix; }
   // Commands 00/01 are one-way transceive setters; radios do not ACK them.
   const invalid = (cmd === 0x28 && (data.length !== 2 || data[0] !== 0 || data[1] > 8))
     || (cmd === 0x17 && !data.length)
@@ -66,10 +69,19 @@ class Broker extends EventEmitter {
     this.session = session;
     this.server = server;
     this.explicitAddress = options.address !== undefined;
-    this.options = { address: 0xb6, requestTimeoutMs: 2000, maxQueued: 1024, maxPerClient: 64, pollMs: 250, autoStartGraceMs: 1000, ...options };
-    for (const key of ['maxQueued', 'maxPerClient']) {
+    this.options = { address: 0xb6, requestTimeoutMs: 2000, maxQueued: 1024, maxPerClient: 64, pollMs: 250, autoStartGraceMs: 1000, cacheEnabled: true, cacheMetersMs: 100, cacheStateMs: 100, cacheSettingsMs: 250, cacheTuningMs: 50, maxCacheEntries: 128, now: () => performance.now(), ...options };
+    for (const key of ['maxQueued', 'maxPerClient', 'maxCacheEntries']) {
       if (!Number.isSafeInteger(this.options[key]) || this.options[key] < 1) throw new Error(`Invalid broker ${key}`);
     }
+    for (const key of ['cacheMetersMs', 'cacheStateMs', 'cacheSettingsMs', 'cacheTuningMs']) {
+      if (!Number.isSafeInteger(this.options[key]) || this.options[key] < 0 || this.options[key] > 1000) throw new Error(`Invalid broker ${key}`);
+    }
+    if (typeof this.options.cacheEnabled !== 'boolean' || typeof this.options.now !== 'function') throw new Error('Invalid read-cache options');
+    this.readCache = new Map();
+    this.cacheEpoch = 0;
+    this.requestSerial = 0;
+    this.cacheStats = { requests: 0, hits: 0, coalesced: 0, misses: 0, invalidations: 0 };
+    this.cacheByQuery = new Map();
     this.queue = [];
     this.parsers = new Map();
     this.radioParser = new FrameParser();
@@ -97,9 +109,65 @@ class Broker extends EventEmitter {
     if (session.connected) queueMicrotask(() => this.synchronize());
   }
 
+  cacheSnapshot() {
+    return { enabled: this.options.cacheEnabled, entries: this.readCache.size, epoch: this.cacheEpoch,
+      ...this.cacheStats, byQuery: Object.fromEntries([...this.cacheByQuery].map(([key, value]) => [key, { ...value }])) };
+  }
+
+  cachePolicy(bytes) {
+    if (!this.options.cacheEnabled) return null;
+    const policy = policyFor(bytes, this.options);
+    return policy?.ttlMs > 0 ? policy : null;
+  }
+
+  countCache(policy, kind) {
+    ++this.cacheStats[kind];
+    if (!this.cacheByQuery.has(policy.key)) this.cacheByQuery.set(policy.key, { requests: 0, hits: 0, coalesced: 0, misses: 0 });
+    ++this.cacheByQuery.get(policy.key)[kind];
+  }
+
+  invalidateReads() {
+    this.readCache.clear();
+    ++this.cacheEpoch;
+    ++this.cacheStats.invalidations;
+  }
+
+  cachedReply(item) {
+    if (!item.cachePolicy || item.cacheEpoch !== this.cacheEpoch) return null;
+    const entry = this.readCache.get(item.cachePolicy.key);
+    if (!entry) return null;
+    if (entry.epoch !== this.cacheEpoch || entry.generation !== this.generation || this.options.now() >= entry.expiresAt) {
+      this.readCache.delete(item.cachePolicy.key);
+      return null;
+    }
+    this.countCache(item.cachePolicy, 'hits');
+    if (item.serial <= entry.filledThroughSerial) this.countCache(item.cachePolicy, 'coalesced');
+    return Buffer.from(entry.reply);
+  }
+
+  rememberReply(item, bytes) {
+    const policy = item.cachePolicy || this.cachePolicy(item.bytes);
+    if (!policy || !this.ready || this.synchronizing || this.releasing || this.stopRequested
+      || item.cacheEpoch !== this.cacheEpoch) return;
+    if (!validReply(item.bytes, bytes)) { this.readCache.delete(policy.key); return; }
+    this.readCache.delete(policy.key);
+    this.readCache.set(policy.key, { reply: Buffer.from(bytes), epoch: this.cacheEpoch,
+      generation: this.generation, expiresAt: this.options.now() + policy.ttlMs,
+      filledThroughSerial: this.requestSerial });
+    while (this.readCache.size > this.options.maxCacheEntries) this.readCache.delete(this.readCache.keys().next().value);
+  }
+
+  sendReadReply(item, bytes) {
+    if (item.client.active === false || item.mediaGeneration !== item.client.mediaGeneration) return;
+    const reply = Buffer.from(bytes);
+    reply[2] = item.bytes[3];
+    this.server.sendCiv(item.client, reply);
+  }
+
   start() { if (this.session.connected && !this.synchronizing && !this.ready) this.synchronize(); return this; }
 
   invalidateTx() {
+    this.invalidateReads();
     if (this.owner) {
       this.server.retireClientWork?.(this.owner);
       this.parsers.get(this.owner)?.reset();
@@ -175,7 +243,9 @@ class Broker extends EventEmitter {
   internal(payload, allowNG = false, priority = false) {
     return new Promise((resolve, reject) => {
       const bytes = frame(this.options.address, payload);
-      const item = { bytes, policy: classify(bytes), internal: true, allowNG, resolve, reject, generation: this.generation };
+      const policy = classify(bytes);
+      if (!policy.read) this.invalidateReads();
+      const item = { bytes, policy, internal: true, allowNG, resolve, reject, generation: this.generation, cacheEpoch: this.cacheEpoch };
       if (priority) this.queue.unshift(item); else this.queue.push(item);
       this.pump();
     });
@@ -225,8 +295,12 @@ class Broker extends EventEmitter {
         this.negative(client, bytes);
         continue;
       }
+      if (!policy.read) this.invalidateReads();
+      const cachePolicy = this.cachePolicy(bytes);
+      if (cachePolicy) this.countCache(cachePolicy, 'requests');
       this.stats.commands++;
-      const item = { client, bytes, policy, generation: this.generation, mediaGeneration: client.mediaGeneration };
+      const item = { client, bytes, policy, generation: this.generation, mediaGeneration: client.mediaGeneration,
+        cachePolicy, cacheEpoch: this.cacheEpoch, serial: ++this.requestSerial };
       if (urgent) this.queue.unshift(item); else this.queue.push(item);
       this.pump();
     }
@@ -251,6 +325,12 @@ class Broker extends EventEmitter {
         this.server.sendCiv(item.client, Buffer.from([0xfe, 0xfe, item.bytes[3], this.options.address, ...response, 0xfd]));
         continue;
       }
+      if (!item.internal) {
+        const cached = this.cachedReply(item);
+        if (cached) { this.sendReadReply(item, cached); continue; }
+      }
+      if (!item.policy.read) this.readCache.clear();
+      if (!item.internal && item.cachePolicy) this.countCache(item.cachePolicy, 'misses');
       if (!item.internal && item.policy.tx && !this.owner) {
         this.owner = item.client;
         this.server.retireAudio?.(this.owner);
@@ -325,17 +405,24 @@ class Broker extends EventEmitter {
         const scope = Buffer.from(bytes); scope[2] = 0;
         this.server.broadcastCiv(scope); continue;
       }
-      if (bytes[2] === 0 || cmd === 0 || cmd === 1) { this.server.broadcastCiv(bytes); continue; }
-      if (bytes[2] !== controller || !this.pending) continue;
+      if (bytes[2] === 0 || cmd === 0 || cmd === 1) {
+        this.invalidateReads();
+        this.server.broadcastCiv(bytes); continue;
+      }
+      if (bytes[2] !== controller) continue;
+      if (!this.pending) {
+        if (cmd !== 0xfb && cmd !== 0xfa) this.invalidateReads();
+        continue;
+      }
       const item = this.pending;
       const ack = cmd === 0xfb || cmd === 0xfa;
       if (ack && bytes.length !== 6) continue;
       if (!ack) {
-        if (cmd !== item.bytes[4]) continue;
+        if (cmd !== item.bytes[4]) { this.invalidateReads(); continue; }
         const prefix = item.policy.prefix;
         const minData = item.policy.read ? (cmd === 3 ? 5 : cmd === 4 ? 2 : prefix.length + 1) : 0;
         if (bytes.length < 6 + minData) continue;
-        if (prefix.length && !bytes.subarray(5, 5 + prefix.length).equals(prefix)) continue;
+        if (prefix.length && !bytes.subarray(5, 5 + prefix.length).equals(prefix)) { this.invalidateReads(); continue; }
       }
       // Read commands require their actual data; an ACK cannot be their
       // answer. NG does terminate a rejected read.
@@ -343,16 +430,18 @@ class Broker extends EventEmitter {
       clearTimeout(item.timer);
       this.pending = null;
       this.session.serial?.invalidate('transaction');
-      if (cmd === 0x1c && bytes[5] === 0 && bytes.length >= 8) this.observedTx = Boolean(bytes[6]);
+      if (cmd === 0xfa) this.invalidateReads();
+      if (cmd === 0x1c && bytes[5] === 0 && bytes.length >= 8) {
+        if (this.observedTx !== Boolean(bytes[6])) this.invalidateReads();
+        this.observedTx = Boolean(bytes[6]);
+      }
+      if (!item.policy.read) this.readCache.clear();
+      if (cmd !== 0xfa && cmd !== 0xfb) this.rememberReply(item, bytes);
       if (item.internal) {
         if (cmd === 0xfa && !item.allowNG) item.reject(new Error('Radio rejected safety/query command'));
         else item.resolve(bytes);
       } else {
-        if (item.client.active !== false && item.mediaGeneration === item.client.mediaGeneration) {
-          const reply = Buffer.from(bytes);
-          reply[2] = item.bytes[3];
-          this.server.sendCiv(item.client, reply);
-        }
+        this.sendReadReply(item, bytes);
         if (cmd !== 0xfa) {
           this.broadcastState(item.policy.read ? bytes : item.bytes);
           if (item.bytes[4] === 0x16 && item.bytes[5] === 0x46 && item.bytes[6] === 0) this.txObligations.delete('vox');

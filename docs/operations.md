@@ -35,6 +35,11 @@ reference. There are no password command-line options.
 | `ICOM_CLIENT_TIMEOUT_MS` | Per-client stream heartbeat timeout | `15000` |
 | `ICOM_RADIO_TIMEOUT_MS` | Upstream stream heartbeat timeout | `15000` |
 | `ICOM_COMMAND_TIMEOUT_MS` | Serialized CI-V reply timeout | `2000` |
+| `ICOM_CACHE_ENABLED` | Client read cache and coalescing, strictly `0` or `1` | `1` |
+| `ICOM_CACHE_METERS_MS` | Meter/ADC overflow TTL, integer 0–1000 ms | `100` |
+| `ICOM_CACHE_STATE_MS` | RX/TX and tuner TTL, integer 0–1000 ms | `100` |
+| `ICOM_CACHE_SETTINGS_MS` | Allowlisted public operator settings TTL, integer 0–1000 ms | `250` |
+| `ICOM_CACHE_TUNING_MS` | Frequency/mode/VFO TTL, integer 0–1000 ms | `50` |
 | `ICOM_MEMORY_BUDGET_MB` | Server replay/reorder/send memory budget, 8–65536 MiB | `128` |
 
 Specify either `ICOM_PASSWORD_FILE` or `ICOM_PASSWORD`, not both. Password files
@@ -53,6 +58,41 @@ reservation calculation; increase it for a larger deployment. These
 are configurable resource bounds, not a promise that all admitted clients can
 be sustained on every machine. Admission and fanout must be measured for the
 intended workload.
+
+## Client read cache
+
+The defaults below limit how long a validated radio reply may serve a later
+client read. Only explicitly allowlisted queries qualify.
+
+| Query family | Effective default TTL |
+| --- | --- |
+| Meters and ADC overflow | 100 ms |
+| RX/TX and tuner state | 100 ms |
+| Public operator settings | 250 ms |
+| Frequency, mode and VFO | 50 ms |
+
+A family TTL of `0` disables caching and coalescing for that family.
+`ICOM_CACHE_ENABLED=0` disables all caching and coalescing, restoring one radio
+transaction per client read. Reads retain FIFO ordering and never pass queued
+writes. Mutations, generation/reconnect changes and unsolicited state
+notifications invalidate cached data; scope sample traffic does not. Internal
+polls and TX safety checks always read the radio afresh. Stable internal polls
+may populate the client cache; startup/release checks neither consume nor
+populate it. This reduces repeated CI-V reads; it does not change audio handling
+or guarantee that audio dropouts will disappear.
+
+On Linux/macOS, `SIGUSR2` writes one JSON status line to stdout containing radio
+state, broker queue/pending/TX ownership booleans and cache counters, including
+per-query counters. It excludes credentials, client identities and session
+nonces. For systemd:
+
+```sh
+sudo systemctl kill --kill-whom=main --signal=SIGUSR2 icom-lan-splitter
+journalctl -u icom-lan-splitter -n 20 --no-pager
+```
+
+The signal handler is unavailable on Windows. Status counters describe this
+process lifetime and do not prove audio quality or physical RF state.
 
 ## Install as a service
 

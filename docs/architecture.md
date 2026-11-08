@@ -52,6 +52,29 @@ subscription OFF requests are handled locally, so one client cannot stop the
 radio's shared scope output. Scope frames are rewritten to broadcast destination
 `00`, allowing clients with different controller addresses to receive them.
 
+## Ordered client read cache
+
+The broker caches only validated successful replies to an explicit query
+allowlist. Defaults are 100 ms for meters/ADC overflow and RX/TX/tuner state,
+250 ms for public operator settings, and 50 ms for frequency/mode/VFO. Each TTL
+is configurable from 0–1000 ms; zero disables its family. The global off switch
+also disables coalescing. See [configuration](operations.md#client-read-cache).
+
+Every logical read stays in the bounded FIFO and checks cache eligibility at
+dispatch. Identical queued reads can share a fresh reply without crossing a
+mutation barrier. Client permissions and generation are checked for each reply,
+and each private reply restores that client's controller address. Cached replies
+are not broadcast as new radio state.
+
+Mutation admission, dispatch and outcome invalidate entries. Cache epochs prevent
+an older in-flight reply from repopulating data after a mutation barrier.
+Reconnects, lease transitions and unsolicited state notifications also invalidate
+entries; scope samples do not. Internal polling, mode checks and TX release/safety
+checks always perform fresh transactions. Stable internal polls may prime the
+client cache, while startup/release checks neither consume nor prime it. No TX
+safety decision uses cached state. Audio handling is unchanged; read caching does
+not guarantee relief from audio dropouts.
+
 ## TX leases
 
 The broker reserves TX for an accepted PTT, CW, supported automatic-TX or VOX

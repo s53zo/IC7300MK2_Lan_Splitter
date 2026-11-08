@@ -52,3 +52,40 @@ test('CLI help is available without credentials; invalid input exits cleanly', (
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /ICOM_RADIO_HOST/);
 });
+
+test('cache configuration has bounded TTLs and explicit global disable', () => {
+    const c = config(defaults).broker;
+    assert.deepEqual([c.cacheEnabled, c.cacheMetersMs, c.cacheStateMs, c.cacheSettingsMs, c.cacheTuningMs],
+        [true, 100, 100, 250, 50]);
+    assert.equal(config({ ...defaults, ICOM_CACHE_ENABLED: '0' }).broker.cacheEnabled, false);
+    assert.equal(config({ ...defaults, ICOM_CACHE_ENABLED: '1' }).broker.cacheEnabled, true);
+    for (const [env, option] of [
+        ['ICOM_CACHE_METERS_MS', 'cacheMetersMs'], ['ICOM_CACHE_STATE_MS', 'cacheStateMs'],
+        ['ICOM_CACHE_SETTINGS_MS', 'cacheSettingsMs'], ['ICOM_CACHE_TUNING_MS', 'cacheTuningMs'],
+    ]) {
+        for (const value of ['0', '1000']) assert.equal(config({ ...defaults, [env]: value }).broker[option], Number(value));
+        for (const value of ['-1', '1001', '1.5', 'NaN', '', ' 50']) {
+            assert.throws(() => config({ ...defaults, [env]: value }), new RegExp(env));
+        }
+    }
+    for (const value of ['', 'true', 'false', '2', 0, 1]) {
+        assert.throws(() => config({ ...defaults, ICOM_CACHE_ENABLED: value }), /ICOM_CACHE_ENABLED/);
+    }
+});
+
+test('status snapshot exposes only redacted state and cache counters', () => {
+    const { statusSnapshot } = require('../src/cli');
+    const cache = { enabled: true, entries: 1, epoch: 2, requests: 3, hits: 1, coalesced: 0, misses: 2, byQuery: {} };
+    const service = {
+        options: { password: 'secret-password' },
+        session: { state: 'connected', connected: true, password: 'session-secret', nonce: 'session-nonce' },
+        broker: { ready: true, queue: [{ client: 'private-client' }], pending: { nonce: 'pending-nonce' },
+            owner: { password: 'owner-secret' }, cacheSnapshot: () => cache },
+    };
+    assert.deepEqual(statusSnapshot(service), {
+        type: 'status', radio: { state: 'connected', connected: true },
+        broker: { ready: true, queueDepth: 1, pending: true, txOwned: true }, cache,
+    });
+    const serialized = JSON.stringify(statusSnapshot(service));
+    for (const secret of ['password', 'nonce', 'private-client', 'secret', 'options']) assert.ok(!serialized.includes(secret));
+});

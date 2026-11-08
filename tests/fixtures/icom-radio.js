@@ -230,6 +230,13 @@ class IcomPeer extends EventEmitter {
       const key = `1a${bytes[0]}`;
       if (bytes.length === 1) response = [cmd, bytes[0], this.settings.get(key) ?? 0];
       else this.settings.set(key, bytes[1]);
+    } else if (cmd === 0x27 && [0x14, 0x15, 0x16, 0x17, 0x19, 0x1a].includes(bytes[0]) && bytes[1] === 0) {
+      // MK2 scope getters carry a main-scope selector before their value.
+      // A getter has no value bytes; a setter appends the selected value.
+      const key = `scope-${bytes[0]}`;
+      const defaults = { 20: [0], 21: [0, 0, 5, 0, 0], 22: [1], 23: [0], 25: [0, 0, 0], 26: [0] };
+      if (bytes.length === 2) response = [cmd, bytes[0], 0, ...(this.settings.get(key) || defaults[bytes[0]])];
+      else this.settings.set(key, [...bytes.subarray(2)]);
     } else if (cmd === 0x27 && bytes[0] !== 0) {
       const key = `27${bytes[0]}`;
       if (bytes.length === 1) response = [cmd, bytes[0], this.settings.get(key) ?? 0];
@@ -252,7 +259,7 @@ class IcomPeer extends EventEmitter {
         this.ptt = true;
         this.schedule(() => { this.ptt = false; }, 30);
       }
-    } else if (cmd === 0x15) response = [cmd, bytes[0], 0, 0x50];
+    } else if (cmd === 0x15) response = bytes[0] === 7 ? [cmd, 7, 0] : [cmd, bytes[0], 0, 0x50];
     else if (cmd === 0x16 && bytes.length === 1) response = [cmd, bytes[0], 0];
     let fault;
     if (this.options.dropNextReply) { this.options.dropNextReply = false; fault = { drop: true }; }

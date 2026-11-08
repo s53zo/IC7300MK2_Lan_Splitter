@@ -12,6 +12,12 @@ function integer(value, name, fallback, min = 1, max = 65535) {
     return n;
 }
 
+function boolean(value, name, fallback) {
+    if (value === undefined) return fallback;
+    if (value !== '0' && value !== '1') throw new Error(`${name} must be 0 or 1`);
+    return value === '1';
+}
+
 function config(env = process.env) {
     const host = env.ICOM_RADIO_HOST;
     const bindAddress = env.ICOM_BIND_ADDRESS || '127.0.0.1';
@@ -48,7 +54,14 @@ function config(env = process.env) {
         server: { bindAddress, ...serverPorts,
             memoryBudgetBytes: integer(env.ICOM_MEMORY_BUDGET_MB, 'ICOM_MEMORY_BUDGET_MB', 128, 8, 65536) * 1024 * 1024,
             timeoutMs: integer(env.ICOM_CLIENT_TIMEOUT_MS, 'ICOM_CLIENT_TIMEOUT_MS', 15000, 100, 300000) },
-        broker: { requestTimeoutMs: integer(env.ICOM_COMMAND_TIMEOUT_MS, 'ICOM_COMMAND_TIMEOUT_MS', 2000, 100, 30000) },
+        broker: {
+            requestTimeoutMs: integer(env.ICOM_COMMAND_TIMEOUT_MS, 'ICOM_COMMAND_TIMEOUT_MS', 2000, 100, 30000),
+            cacheEnabled: boolean(env.ICOM_CACHE_ENABLED, 'ICOM_CACHE_ENABLED', true),
+            cacheMetersMs: integer(env.ICOM_CACHE_METERS_MS, 'ICOM_CACHE_METERS_MS', 100, 0, 1000),
+            cacheStateMs: integer(env.ICOM_CACHE_STATE_MS, 'ICOM_CACHE_STATE_MS', 100, 0, 1000),
+            cacheSettingsMs: integer(env.ICOM_CACHE_SETTINGS_MS, 'ICOM_CACHE_SETTINGS_MS', 250, 0, 1000),
+            cacheTuningMs: integer(env.ICOM_CACHE_TUNING_MS, 'ICOM_CACHE_TUNING_MS', 50, 0, 1000),
+        },
     };
 }
 module.exports = { config };

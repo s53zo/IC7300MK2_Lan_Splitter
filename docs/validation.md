@@ -24,9 +24,10 @@ dependencies. `check` runs Node syntax checks; ESLint provides static linting.
 The source is plain JavaScript, with no compiler/typecheck stage. These checks do
 not establish protocol correctness by themselves.
 
-Local execution: **81 tests passed, zero failures/skips**, comprising 38 broker,
-4 configuration, 10 UDP integration, 7 lifecycle/operations, 5 packet/transport,
-and 17 native-server tests. The earlier 73-test suite also passed
+Local execution: **110 tests passed, zero failures/skips**: 38 existing broker tests, 21 cache
+broker tests, 3 policy/validation tests, 6 configuration/status tests, 13 UDP
+integration tests, 7 lifecycle/operations tests, 5 packet/transport tests and
+17 native-server tests. The earlier 73-test suite also passed
 on Node.js 22.23.4; subsequent cases cover the hardware-probe script against a synthetic radio
 and ensure owner stop requests survive full command queues without late
 PTT acknowledgements rearming audio. ESLint and syntax checks passed. `npm audit` reported
@@ -201,3 +202,21 @@ TX assertions use CI-V ACKs plus independent TX/RX state reads. They do not
 measure radiated output, dummy-load power, modulation quality or audible audio.
 Physical tests of CW/VOX/tuner/voice-memory cleanup, forced process death, and
 network-loss RF behavior remain outside this hardware record.
+
+## Ordered client caching — 2026-11-08
+
+Client meters (including ADC overflow, power, SWR and ALC), RX/TX state and tuner
+state use 100 ms TTLs. Operator settings use 250 ms; tuning/VFO reads use 50 ms.
+The cache is an explicit reviewed query allowlist, not a blanket command-family
+cache. Internal polling, mode verification and TX-release decisions always read
+the radio afresh. Fresh stable internal replies may prime client display values.
+
+Fake-clock tests cover exact TTL expiry, in-flight/queued sharing, mutation
+barriers, old replies, failures, reconnect, media generations and TX safety
+isolation. Independent UDP tests demonstrate two addressed client replies from
+one radio read and verify a queued tuning write cannot be hidden by a cached
+frequency. Native wfweb synthetic interoperability passed again after correcting
+the fixture's main-scope getter replies to include the selector and value.
+No audio retransmission, resampling or buffering policy is changed by this cache.
+Live savings are recorded through the redacted SIGUSR2 counters rather than
+promised from the earlier request-rate estimate.

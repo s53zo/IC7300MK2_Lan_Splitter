@@ -58,7 +58,12 @@ configuration, service examples, and failure behavior.
 
 ## Shared control and transmission
 
-During receive, commands execute in arrival order. Multiple clients on one
+During receive, commands execute in arrival order. Allowlisted client reads use
+short caches (100 ms meters/state, 250 ms settings, 50 ms tuning) and combine
+identical queued reads while preserving write order. Internal safety checks
+always query the radio afresh. Set `ICOM_CACHE_ENABLED=0` to disable caching and
+coalescing; see [cache configuration and status](docs/operations.md#client-read-cache).
+This does not change the audio path or guarantee relief from audio dropouts. Multiple clients on one
 computer, including clients using the same CI-V controller address, have separate
 sessions and reply routing.
 
