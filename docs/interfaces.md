@@ -199,7 +199,7 @@ the same saved settings. Never run both versions against the radio together.
 See [release downloads and platform requirements](releases.md) for checksums,
 OS/library requirements, source archives and the separate headless downloads.
 
-## Per-command cache lifetimes (builds after v0.8)
+## Per-command cache lifetimes (v0.8.1 and later)
 
 In **Settings**, expand **Per-command cache lifetimes**. Each supported read query
 has a named entry with its hexadecimal CI-V code, such as **S-meter (1502)** or

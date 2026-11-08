@@ -1,6 +1,6 @@
 {
   "name": "ic7300mk2-lan-splitter",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Share one IC-7300MK2 native Icom LAN connection between multiple clients",
   "license": "AGPL-3.0-only",
   "type": "commonjs",
