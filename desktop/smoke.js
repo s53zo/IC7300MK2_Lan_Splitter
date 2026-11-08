@@ -111,4 +111,17 @@ async function run({ window, controller, outputDirectory, directory, credentialS
         await fs.writeFile(path.join(outputDirectory, 'result.json'), JSON.stringify(result, null, 2) + '\n'); console.log(JSON.stringify(result));
     } finally { await Promise.allSettled(peers.map((p) => p.close())); await radio.close(); }
 }
-module.exports = { run };
+async function writeFailure({ window, controller, outputDirectory, error, events }) {
+    await fs.mkdir(outputDirectory, { recursive: true });
+    let renderer;
+    try {
+        renderer = await window.webContents.executeJavaScript(`({readyState:document.readyState,uiReady:window.uiReady===true,bridgeAvailable:typeof window.splitter?.request==='function',title:document.title,url:location.href,message:document.getElementById('message')?.textContent,bodyText:document.body?.innerText.slice(0,12000)})`);
+    } catch (failure) { renderer = { error: failure.message }; }
+    const clean = (value) => JSON.parse(JSON.stringify(controller.redact(value)).split('testpass').join('[fixture password redacted]'));
+    const report = clean({ result: 'fail', platform: process.platform, architecture: process.arch, message: error.message,
+        renderer, events: events.slice(-50), status: controller.getState().status });
+    await fs.writeFile(path.join(outputDirectory, 'failure.json'), JSON.stringify(report, null, 2) + '\n');
+    try { await fs.writeFile(path.join(outputDirectory, 'failure.png'), (await window.webContents.capturePage()).toPNG()); } catch { /* A crashed renderer cannot produce an image. */ }
+    console.error(JSON.stringify({ desktopSmokeFailure: report }));
+}
+module.exports = { run, writeFailure };

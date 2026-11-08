@@ -31,14 +31,19 @@ def main():
         raise SystemExit('This test needs POSIX pseudoterminals; use the native Linux release jobs.')
     root = Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory(prefix='icom-tui-smoke-') as directory:
-        config = Path(directory) / 'config'
         xdg = Path(directory) / 'xdg'
+        # Native Linux downloads must open the terminal UI without arguments.
+        # Source/Mac probes use the explicit CLI switch so their existing
+        # headless default is also preserved.
+        default_launch = not args.source and sys.platform.startswith('linux')
+        config = xdg / 'icom-lan-splitter' if default_launch else Path(directory) / 'config'
         env = {k: v for k, v in os.environ.items()
                if not k.upper().startswith('ICOM_') and k.upper() not in ('NODE_OPTIONS', 'NODE_PATH')}
         env.update({'XDG_CONFIG_HOME': str(xdg), 'TERM': 'xterm-256color'})
         command = ([shutil.which('node') or 'node', str(root / 'src' / 'cli.js')]
                    if args.source else [str(Path(args.executable).resolve())])
-        command += ['--tui', '--config-dir', str(config)]
+        if not default_launch:
+            command += ['--tui', '--config-dir', str(config)]
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
         before = termios.tcgetattr(slave)
@@ -140,6 +145,7 @@ def main():
             assert secret.encode() not in captured, 'Password appeared in terminal output'
             print(json.dumps({'result': 'pass', 'mode': 'source' if args.source else 'packaged',
                               'platform': sys.platform, 'realPty': True, 'views': 5,
+                              'noArgumentLaunch': default_launch,
                               'passwordMasked': True, 'invalidSettingsRejected': True,
                               'diagnosticExport': True, 'terminalRestored': True,
                               'physicalRadioUsed': False, 'txRequested': False}))

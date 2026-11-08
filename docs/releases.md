@@ -182,3 +182,29 @@ the new version, and start it. Verify the radio connection and downstream client
 To roll back, stop normally, restore the old executable path and start again with
 the same configuration. Clients may reconnect during either change. Do not run
 both versions against the radio simultaneously; the radio accepts one LAN session.
+
+## Build and test the desktop installers
+
+Use a native Windows x64, Intel Mac or Apple Silicon Mac with the workflow's
+pinned Node 26.13.0. From the exact source commit:
+
+```sh
+npm ci
+npm run desktop:install
+npm run desktop:start
+```
+
+The explicit install step downloads the pinned official Electron runtime; it is
+not an end-user requirement. To build and test the real installer/disk image:
+
+```sh
+npm run desktop:build
+npm run desktop:smoke
+```
+
+The smoke installs/copies the actual distributable into a temporary directory and
+uses loopback fixtures plus native credential encryption. Screenshots and its
+result are written beneath `.release/screenshots/`. It never uses a physical
+radio. Linux native release jobs also run the default no-argument TUI in a real
+PTY with two synthetic clients and test confirmed shutdown. There are no cloud
+or remote-control dependencies in the installed interfaces.

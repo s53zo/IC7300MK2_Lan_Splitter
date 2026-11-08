@@ -41,6 +41,12 @@ async function main() {
     app.setPath('sessionData', userDirectory);
     if (!app.requestSingleInstanceLock()) { app.quit(); return; }
     let window, controller, allowClose = false, closing = false;
+    const smokeEvents = [];
+    function recordSmoke(kind, details) {
+        if (!smokeDirectory) return;
+        smokeEvents.push({ time: new Date().toISOString(), kind, ...details });
+        if (smokeEvents.length > 50) smokeEvents.shift();
+    }
     app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } });
     await app.whenReady();
     const { AppController } = require('../src/app/controller');
@@ -53,6 +59,12 @@ async function main() {
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true,
             nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false },
     });
+    if (smokeDirectory) {
+        window.webContents.on('preload-error', (_event, _preloadPath, error) => recordSmoke('preload-error', { message: error.message }));
+        window.webContents.on('render-process-gone', (_event, details) => recordSmoke('renderer-gone', { reason: details.reason, exitCode: details.exitCode }));
+        window.webContents.on('did-fail-load', (_event, code, description, url) => recordSmoke('load-error', { code, message: description, url }));
+        window.webContents.on('console-message', (event) => recordSmoke('renderer-console', { message: event.message || '', level: event.level || '' }));
+    }
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event) => event.preventDefault());
     window.webContents.on('will-attach-webview', (event) => event.preventDefault());
@@ -102,19 +114,27 @@ async function main() {
             }
             }
         } catch (error) {
+            recordSmoke('request-error', { action, message: error.message, senderMatches: event.sender === window.webContents, frameMatches: event.senderFrame === window.webContents.mainFrame, frameUrl: event.senderFrame?.url, indexFile });
             // Controller errors are redacted before reaching the renderer.
             return { ok: false, error: action === 'save' || action === 'start' || action === 'reconnect' || action === 'stop' ? controller.redact(error.message) : 'The requested action could not be completed. Please check Diagnostics.' };
         }
     });
     controller.on('snapshot', (state) => { if (window && !window.isDestroyed()) window.webContents.send('splitter:snapshot', state); });
-    await window.loadFile(indexFile);
+    try { await window.loadFile(indexFile); }
+    catch (error) {
+        if (smokeDirectory) await require('./smoke').writeFailure({ window, controller, outputDirectory: smokeDirectory, error, events: smokeEvents }).catch(() => {});
+        throw error;
+    }
     window.show();
     try { await controller.initialize(); } catch { /* State contains an actionable error; keep the window open. */ }
     window.webContents.send('splitter:snapshot', controller.getState());
     if (smokeDirectory) {
         try { await require('./smoke').run({ app, window, controller, outputDirectory: smokeDirectory, directory, credentialStore: controller.options?.credentialStore || new DesktopCredentials(directory, safeStorage), getCloseState: () => ({ allowClose }) });
             allowClose = true; await controller.close({ confirmedTx: true }); window.destroy(); app.exit(0);
-        } catch (error) { console.error(`Desktop smoke failed: ${error.message}`); allowClose = true; await controller.close({ confirmedTx: true }).catch(() => {}); app.exit(1); }
+        } catch (error) {
+            await require('./smoke').writeFailure({ window, controller, outputDirectory: smokeDirectory, error, events: smokeEvents }).catch(() => {});
+            console.error(`Desktop smoke failed: ${controller.redact(error.message)}`); allowClose = true; await controller.close({ confirmedTx: true }).catch(() => {}); app.exit(1);
+        }
     }
 }
 if (require.main === module || (process.versions.electron && process.type === 'browser')) main().catch(() => { console.error('The desktop application could not start.'); process.exitCode = 1; });
