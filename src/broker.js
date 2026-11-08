@@ -149,9 +149,9 @@ class Broker extends EventEmitter {
     try {
       // A fresh association prevents stale acknowledgements from earlier
       // sessions confirming these cleanup commands. No mode/routing changes.
-      await this.internal([0x17, 0xff], true);
-      await this.stopInitiators();
       await this.internal([0x1c, 0, 0]);
+      await this.stopKeyer();
+      await this.stopInitiators();
       const result = await this.internal([0x1c, 0]);
       if (result[6] !== 0) throw new Error('Radio has not confirmed receive state');
       // Output subscriptions belong to the splitter. One client turning off
@@ -427,9 +427,9 @@ class Broker extends EventEmitter {
         }
         this.queue = keep;
         if (!this.session.connected) return;
-        await this.internal([0x17, 0xff], true, true);
-        await this.stopInitiators(true);
         await this.internal([0x1c, 0, 0], false, true);
+        await this.stopKeyer(true);
+        await this.stopInitiators(true);
         const result = await this.internal([0x1c, 0], false, true);
         if (result[6] !== 0) throw new Error('Radio has not confirmed TX release');
         if (generation !== this.generation) return;
@@ -455,6 +455,13 @@ class Broker extends EventEmitter {
     // or VOX trigger must not disappear when the client enables/stops an
     // automatic source (or when VOX is toggled during explicit PTT).
     this.lease = ['ptt', 'vox', 'voice', 'tuner', 'cw'].find((kind) => this.activeTriggers.has(kind)) || null;
+  }
+
+  async stopKeyer(priority = false) {
+    // The physical MK2 rejects 17 FF outside CW/CW-R. Do not manufacture
+    // an avoidable NG or change the operator's mode just for cleanup.
+    const mode = await this.internal([0x04], false, priority);
+    if (mode[5] === 3 || mode[5] === 7) await this.internal([0x17, 0xff], false, priority);
   }
 
   async stopInitiators(priority = false) {

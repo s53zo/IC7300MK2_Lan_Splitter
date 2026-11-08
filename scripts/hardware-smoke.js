@@ -70,8 +70,10 @@ async function run() {
         await until(() => peer.frames.slice(start).some((f) => match(f) || f[4] === 0xfa), 'command reply');
         const reply = peer.frames.slice(start).find((f) => match(f) || f[4] === 0xfa);
         if (reply[4] === 0xfa) {
-            const diagnostic = { source: service.broker.stats.rejected > rejectsBefore ? 'splitter' : 'radio',
-                command: [cmd, ...data].map((byte) => byte.toString(16).padStart(2, '0')).join(' '),
+            // A generic NG carries no request ID. These fields describe the
+            // current request window, not definitive origin/correlation.
+            const diagnostic = { sourceHint: service.broker.stats.rejected > rejectsBefore ? 'local rejection occurred' : 'no local rejection observed',
+                requestedCommand: [cmd, ...data].map((byte) => byte.toString(16).padStart(2, '0')).join(' '),
                 ready: service.broker.ready, observedTx: service.broker.observedTx,
                 owner: Boolean(service.broker.owner), lease: service.broker.lease,
                 releasing: service.broker.releasing, stopRequested: service.broker.stopRequested,

@@ -24,7 +24,7 @@ dependencies. `check` runs Node syntax checks; ESLint provides static linting.
 The source is plain JavaScript, with no compiler/typecheck stage. These checks do
 not establish protocol correctness by themselves.
 
-Local execution: **78 tests passed, zero failures/skips**, comprising 35 broker,
+Local execution: **81 tests passed, zero failures/skips**, comprising 38 broker,
 4 configuration, 10 UDP integration, 7 lifecycle/operations, 5 packet/transport,
 and 17 native-server tests. The earlier 73-test suite also passed
 on Node.js 22.23.4; subsequent cases cover the hardware-probe script against a synthetic radio
@@ -163,11 +163,11 @@ the previously pending availability/dummy-load gate. Credentials were supplied
 through a silent runtime prompt and were not written to source or test output.
 
 [Sanitized result JSON](hardware-results/2026-11-08-native-lan.json) records
-04:32:54–04:33:32 UTC on macOS/x64, Node 26.13.0:
+04:39:47–04:40:24 UTC on macOS/x64, Node 26.13.0:
 
 - Two native clients shared the splitter's single physical-radio session.
-- Both received sustained 48 kHz mono PCM and full scope frames: 3,482,880 and
-  3,586,560 audio bytes, and 1,086 and 1,113 scope frames respectively. Different
+- Both received sustained 48 kHz mono PCM and full scope frames: 3,479,040 and
+  3,588,480 audio bytes, and 1,086 and 1,113 scope frames respectively. Different
   totals reflect their different open/close intervals; these are not packet-loss
   measurements.
 - A 10 Hz frequency change through one client was read by the other and the
@@ -189,8 +189,11 @@ node scripts/hardware-smoke.js --run --radio-available --check-tuning \
 
 Exploratory attempts included generic CI-V rejections and one startup
 authentication-status failure. Command/state diagnostics were added, and the
-final instrumented run passed, but the earlier failures' cause was not
-established. This short run is not a long soak or proof that intermittent
+final instrumented run passed. Review also found an unconditional CW-stop
+command outside CW mode, which prior PiRO hardware records show the MK2 rejects.
+Cleanup now releases PTT, reads the actual mode, and stops the keyer only in CW
+or CW-R; rejection in CW remains fatal. The full physical probe passed again
+after this change. The earlier failures' full cause was not established. This short run is not a long soak or proof that intermittent
 firmware/network timing issues cannot occur. Diagnostics print only whitelisted
 status fields, never raw authentication packets or token values.
 

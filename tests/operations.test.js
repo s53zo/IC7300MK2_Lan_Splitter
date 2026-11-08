@@ -138,10 +138,13 @@ for (const tx of [false, true]) {
         // --dummy-load here is synthetic test input, never hardware readiness.
         const radio = await new IcomPeer({ passwordVector: Buffer.from('223f5c31223f583b0000000000000000', 'hex') }).start();
         const address = radio.config();
+        const [listenControl, listenCiv, listenAudio] = await availablePorts();
         const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('ICOM_')));
         Object.assign(env, { ICOM_RADIO_HOST: '127.0.0.1', ICOM_USERNAME: 'beer', ICOM_PASSWORD: 'testpass',
             ICOM_RADIO_CONTROL_PORT: String(address.controlPort), ICOM_RADIO_CIV_PORT: String(address.civPort),
-            ICOM_RADIO_AUDIO_PORT: String(address.audioPort) });
+            ICOM_RADIO_AUDIO_PORT: String(address.audioPort),
+            ICOM_LISTEN_CONTROL_PORT: String(listenControl), ICOM_LISTEN_CIV_PORT: String(listenCiv),
+            ICOM_LISTEN_AUDIO_PORT: String(listenAudio) });
         const args = ['scripts/hardware-smoke.js', '--run', '--radio-available'];
         args.push('--check-tuning');
         if (tx) args.push('--tx', '--dummy-load', '--handover-cycles', '2');

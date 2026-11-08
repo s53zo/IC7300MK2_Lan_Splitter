@@ -1,7 +1,7 @@
 {
   "result": "pass",
-  "began": "2026-11-08T04:32:54.773Z",
-  "finished": "2026-11-08T04:33:32.241Z",
+  "began": "2026-11-08T04:39:47.440Z",
+  "finished": "2026-11-08T04:40:24.909Z",
   "platform": "darwin",
   "node": "v26.13.0",
   "clients": 2,
@@ -15,8 +15,8 @@
   "upstreamTokenRenewed": true,
   "handoverCycles": 5,
   "audioBytes": [
-    3482880,
-    3586560
+    3479040,
+    3588480
   ],
   "scopeFrames": [
     1086,

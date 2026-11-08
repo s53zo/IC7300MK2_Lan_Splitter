@@ -106,3 +106,8 @@ queued work and taking a bounded priority position after the in-flight reply.
 A PTT-off request immediately retires queued media and blocks audio rearming; a
 late PTT-on acknowledgement cannot undo that stop. Reply correlation still
 requires consuming the current transaction or resetting on timeout.
+
+Cleanup is mode-aware: it releases PTT, queries the actual mode, and requires CW
+keyer stop only in CW/CW-R. The physical MK2 rejects CW-stop in other modes. A
+failed mode read or rejected stop in CW prevents readiness/handover instead of
+being treated as a successful release. The operator's mode is not changed.

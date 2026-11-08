@@ -9,7 +9,7 @@ const answer = (payload, to = 0xe0) => Buffer.from([0xfe, 0xfe, to, 0xb6, ...pay
 
 class Radio extends EventEmitter {
   constructor() {
-    super(); this.connected = false; this.commands = []; this.media = []; this.ptt = false; this.auto = true; this.invalidated = [];
+    super(); this.connected = false; this.commands = []; this.media = []; this.ptt = false; this.mode = 1; this.auto = true; this.invalidated = [];
     this.serial = { invalidate: (group) => this.invalidated.push(group) };
     this.audio = { invalidate: (group) => this.invalidated.push(group) };
     this.playback = { keyed: false, setKeyed: (on) => { this.playback.keyed = on; } };
@@ -22,7 +22,7 @@ class Radio extends EventEmitter {
   respond(bytes = this.commands.at(-1)) {
     let payload = [0xfb];
     if (bytes[4] === 3) payload = [3, 0, 0x40, 7, 0x14, 0];
-    if (bytes[4] === 4) payload = [4, 1, 1];
+    if (bytes[4] === 4) payload = [4, this.mode, 1];
     if (bytes[4] === 0x1c && bytes[5] === 0) {
       if (bytes.length === 8) this.ptt = Boolean(bytes[6]);
       else payload = [0x1c, 0, +this.ptt];
@@ -75,7 +75,7 @@ test('startup confirms receive state before clients may execute commands', async
   const broker = new Broker(radio, server, { pollMs: 10000 }); t.after(() => broker.close());
   server.emit('command', client, cmd([5, 1])); assert.equal(server.sent[0].bytes[4], 0xfa);
   const ready = once(broker, 'ready'); radio.connected = true; radio.emit('connected'); await ready;
-  assert.deepEqual(radio.commands.map((b) => [...b.subarray(4, -1)]), [[0x17, 0xff], [0x1c, 0, 0], [0x1c, 0], [0x27, 0x10, 1], [0x27, 0x11, 1]]);
+  assert.deepEqual(radio.commands.map((b) => [...b.subarray(4, -1)]), [[0x1c, 0, 0], [4], [0x1c, 0], [0x27, 0x10, 1], [0x27, 0x11, 1]]);
   assert.ok(broker.ready);
 });
 
@@ -161,7 +161,7 @@ test('timeout resets upstream and never replays queued or old TX work after reco
   const before = radio.commands.length;
   radio.emit('civ', answer([0xfb])); assert.equal(radio.commands.length, before);
   radio.auto = true; const ready = once(broker, 'ready'); radio.connected = true; radio.emit('connected'); await ready;
-  assert.deepEqual(radio.commands.slice(before).map((x) => [...x.subarray(4, -1)]), [[0x17, 0xff], [0x1c, 0, 0], [0x1c, 0], [0x27, 0x10, 1], [0x27, 0x11, 1]]);
+  assert.deepEqual(radio.commands.slice(before).map((x) => [...x.subarray(4, -1)]), [[0x1c, 0, 0], [4], [0x1c, 0], [0x27, 0x10, 1], [0x27, 0x11, 1]]);
   assert.ok(server.sent.some((x) => x.client === a && x.bytes[4] === 0xfa));
 });
 
@@ -437,4 +437,44 @@ test('invalid broker queue capacities fail before starting timers', () => {
   for (const options of [{ maxQueued: 0 }, { maxQueued: -1 }, { maxPerClient: 1.5 }]) {
     assert.throws(() => new Broker(new Radio(), new Server(), options), /Invalid broker/);
   }
+});
+
+test('USB cleanup does not issue a CW-stop that the physical MK2 rejects', async (t) => {
+  const { radio, broker, a, send } = await setup(t);
+  send(a, [0x1c, 0, 1]); await tick();
+  const before = radio.commands.length;
+  await broker.release();
+  assert.ok(radio.commands.slice(before).some((f) => f[4] === 4), 'cleanup checks current mode');
+  assert.equal(radio.commands.slice(before).some((f) => f[4] === 0x17), false);
+});
+
+test('CW and CW-R cleanup still requires a successful keyer stop before handover', async (t) => {
+  for (const mode of [3, 7]) {
+    const { radio, broker, a, send } = await setup(t);
+    radio.mode = mode;
+    send(a, [0x17, 65]); await tick();
+    const before = radio.commands.length;
+    await broker.release();
+    assert.ok(radio.commands.slice(before).some((f) => f[4] === 0x17 && f[5] === 0xff));
+    assert.equal(broker.owner, null);
+    assert.equal(radio.ptt, false);
+  }
+});
+
+test('rejected keyer stop in CW blocks readiness instead of allowing handover', async (t) => {
+  const { radio, broker, server, a, b, send } = await setup(t);
+  radio.mode = 3;
+  send(a, [0x17, 65]); await tick();
+  const respond = radio.respond.bind(radio);
+  radio.respond = (bytes) => {
+    if (bytes[4] === 0x17 && bytes[5] === 0xff) radio.emit('civ', answer([0xfa]));
+    else respond(bytes);
+  };
+  await broker.release();
+  assert.ok(radio.failure);
+  assert.equal(broker.ready, false);
+  const before = radio.commands.length;
+  send(b, [0x1c, 0, 1]);
+  assert.equal(radio.commands.length, before);
+  assert.equal(server.sent.at(-1).bytes[4], 0xfa);
 });
