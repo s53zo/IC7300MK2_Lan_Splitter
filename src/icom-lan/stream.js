@@ -22,6 +22,47 @@ class IcomStream extends EventEmitter {
     this.replay = new Map();
     this.reorder = new Map();
     this.counters = { malformed: 0, stale: 0, duplicates: 0, lost: 0, replayed: 0 };
+    this.resetPing();
+  }
+
+  resetPing() {
+    this.pendingPings = new Map();
+    this.pingReplies = [];
+    this.pingSamples = 0;
+    this.lastPingMs = this.pingMeasuredAt = null;
+  }
+
+  expirePings(now) {
+    // Match only recent requests from this association. This map never
+    // retains packet contents and stays bounded even if a peer never echoes.
+    for (const [seq, sent] of this.pendingPings) {
+      if (now - sent.at >= Math.min(this.timeoutMs, 5000)) this.pendingPings.delete(seq);
+    }
+  }
+
+  pingSnapshot() {
+    const now = this.now();
+    this.expirePings(now);
+    return { lastMs: this.lastPingMs,
+      averageMs: this.pingReplies.length ? this.pingReplies.reduce((sum, ms) => sum + ms, 0) / this.pingReplies.length : null,
+      samples: this.pingSamples, measuredAt: this.pingMeasuredAt,
+      stale: !this.ready || this.failed === true || this.pingMeasuredAt === null
+        || now - this.pingMeasuredAt >= Math.min(this.timeoutMs, 2000) };
+  }
+
+  observePingReply(seq, stamp) {
+    const now = this.now();
+    this.expirePings(now);
+    const sent = this.pendingPings.get(seq);
+    if (!sent || sent.stamp !== stamp) return;
+    this.pendingPings.delete(seq);
+    const ms = now - sent.at;
+    if (!Number.isFinite(ms) || ms < 0) return;
+    this.lastPingMs = ms;
+    this.pingMeasuredAt = now;
+    ++this.pingSamples;
+    this.pingReplies.push(ms);
+    if (this.pingReplies.length > 64) this.pingReplies.shift();
   }
 
   async bind() {
@@ -43,6 +84,7 @@ class IcomStream extends EventEmitter {
 
   start() {
     const t = this.now();
+    this.resetPing();
     this.startedAt = this.lastRx = this.lastHandshake = t;
     this.lastIdle = this.lastPing = t;
     this.handshake();
@@ -105,7 +147,7 @@ class IcomStream extends EventEmitter {
         reply[16] = 1;
         p.copy(reply, 17, 17, 21);
         this.raw(reply);
-      }
+      } else if (p[16] === 1) this.observePingReply(h.seq, p.readUInt32LE(17));
       return;
     }
     if (h.type === P.TYPE.DISCONNECT) { this.fail(`${this.role} stream closed by radio`); return; }
@@ -189,6 +231,9 @@ class IcomStream extends EventEmitter {
       this.lastPing = now;
       const p = P.packet(21, P.TYPE.PING, this.localId, this.remoteId, this.pingSeq++ & 0xffff);
       p.writeUInt32LE(Math.floor(now) >>> 0, 17);
+      this.expirePings(now);
+      this.pendingPings.set(p.readUInt16LE(6), { at: now, stamp: p.readUInt32LE(17) });
+      while (this.pendingPings.size > 32) this.pendingPings.delete(this.pendingPings.keys().next().value);
       this.raw(p);
     }
     if (this.role !== 'audio' && now - this.lastIdle >= 100) {
@@ -207,11 +252,13 @@ class IcomStream extends EventEmitter {
   fail(message) {
     if (this.failed) return;
     this.failed = true;
+    this.resetPing();
     this.emit('failure', new Error(message));
   }
 
   async close() {
     clearInterval(this.timer);
+    this.resetPing();
     const socket = this.socket;
     if (!socket) return;
     if (this.remoteId) {

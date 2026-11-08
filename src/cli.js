@@ -3,9 +3,15 @@
 
 const { config } = require('./config');
 
-const HELP = `Usage: icom-lan-splitter [--help]
+const HELP = `Usage: icom-lan-splitter [--help | --headless | --tui [--config-dir DIRECTORY]]
 
-Required environment:
+Interface:
+  --tui                Open the keyboard-operated local interface
+  --config-dir PATH    Optional settings directory for --tui
+  --headless           Run the environment-configured service
+  Linux executable opens the terminal interface when launched interactively.
+
+Required environment for headless mode:
   ICOM_RADIO_HOST       Radio IPv4 address
   ICOM_USERNAME         Radio username (also accepted by splitter)
   ICOM_PASSWORD_FILE    File containing radio password (recommended)
@@ -64,18 +70,26 @@ function statusSnapshot(service) {
     };
 }
 
-async function main() {
+async function main({ interactiveDefault = false } = {}) {
     if (process.argv.includes('--help') || process.argv.includes('-h')) { process.stdout.write(HELP); return; }
-    if (process.argv.length > 2) throw new Error('Unknown argument; use --help');
+    const args = process.argv.slice(2);
+    if (args[0] === '--tui' || (interactiveDefault && !args.length && process.stdin.isTTY)) {
+        if (args.length && !(args.length === 1 || (args.length === 3 && args[1] === '--config-dir'))) throw new Error('Use --tui [--config-dir DIRECTORY]');
+        await require('./app/tui').runTui({ directory: args[2] }); return;
+    }
+    if (args.length && !(args.length === 1 && args[0] === '--headless')) throw new Error('Unknown argument; use --help');
     const options = config();
+    const releaseLock = await require('./app/lock').acquireLock(`radio:${options.radio.host}:${options.radio.controlPort}`);
     const { Splitter } = require('./splitter');
-    const service = new Splitter(options);
+    let service;
+    try { service = new Splitter(options); }
+    catch (error) { await releaseLock(); throw error; }
     let stopping = false;
     const stop = async () => {
         if (stopping) return;
         stopping = true;
         process.stdout.write('Stopping; releasing radio transmission if connected.\n');
-        await service.close();
+        try { await service.close(); } finally { await releaseLock(); }
     };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
@@ -86,11 +100,11 @@ async function main() {
         await service.start();
         if (!stopping) process.stdout.write(`Ready: ${options.server.bindAddress} UDP ${[service.address().controlPort, service.address().civPort, service.address().audioPort].join('/')}\n`);
     } catch (error) {
-        await service.close();
+        try { await service.close(); } finally { await releaseLock(); }
         // Errors from sockets may include endpoints; never include packet dumps
         // or configuration objects in diagnostics.
         throw error;
     }
 }
-if (require.main === module) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
 module.exports = { main, HELP, statusSnapshot };
+if (require.main === module) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
