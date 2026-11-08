@@ -75,6 +75,10 @@ release. Configure and verify a suitable radio-side transmission timeout.
 Front-panel operation remains a physical radio operation; the service does not
 create independent receivers or arbitrate human controls on the radio itself.
 
+Physical MK2 checks with two clients have passed for shared tuning, audio/scope,
+token renewal and five PTT handover cycles. These are protocol/state checks; RF
+power and audio quality were not measured. See [hardware evidence](docs/validation.md#physical-mk2-record--2026-11-08).
+
 ## Development and evidence
 
 ```sh

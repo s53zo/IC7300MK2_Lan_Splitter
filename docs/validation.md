@@ -1,6 +1,6 @@
 # Validation record
 
-Recorded 2026-11-07. Local macOS/x64 tests used Node.js 22.23.4 and 26.13.0. Synthetic tests and native
+Recorded 2026-11-07; physical-radio evidence added 2026-11-08. Local macOS/x64 tests used Node.js 22.23.4 and 26.13.0. Synthetic tests and native
 application packet interoperability pass within the coverage below. This is not
 a claim that every client, operating system, firmware revision or physical TX
 failure mode has been verified.
@@ -43,7 +43,7 @@ zero vulnerabilities, including development tooling. A minimatch override pins
 | wfview standalone application | Intended native Icom LAN | Not executed | No application interoperability claim |
 | Icom RS-BA1 application | Windows | Not executed | No application interoperability claim |
 | rigplane / Radio WebOp / sdroxide | Native LAN candidates | Discovered and researched | Not executed against splitter |
-| Physical IC-7300MK2 at `10.0.1.25` | Actual LAN | Earlier basic ping only | No new splitter radio session, receive/control or dummy-load TX test; readiness confirmation pending |
+| Physical IC-7300MK2 at `10.0.1.25` | macOS/x64 Node 26.13.0, two native session clients, codec 4/48 kHz mono | 35-second streaming/renewal test, reversible shared tuning, five PTT contention/disconnect/handover cycles and final receive confirmation passed | CI-V state and packet evidence; RF power/quality, audible playback and full application UI not measured |
 
 The implemented audio format is codec 4, mono S16LE at 48 kHz; other formats are
 explicitly rejected. A tested PCM client does not prove every native Icom client
@@ -94,16 +94,16 @@ not a guaranteed graceful TX release.
 
 | Requirement | Evidence inspected | Status and residual scope |
 | --- | --- | --- |
-| One upstream native session, multiple unchanged clients including same IP | `tests/integration.test.js`, native-server association tests, benchmark session counter, wfweb smoke | Proven synthetically and with one native application packet path; hardware confirmation remains |
-| Audio, complete 475-point scope and shared state to all clients | Integration fanout/identity assertions; broker scope broadcast and virtual subscription tests; measured fanout | Proven for supported PCM and synthetic scope; physical source/rendering not measured |
+| One upstream native session, multiple unchanged clients including same IP | `tests/integration.test.js`, native-server association tests, benchmark session counter, wfweb smoke | Proven synthetically, with one native application packet path, and two native session clients on the physical MK2 |
+| Audio, complete 475-point scope and shared state to all clients | Integration fanout/identity assertions; broker scope broadcast and virtual subscription tests; measured fanout | Proven for supported PCM and scope from both simulator and physical MK2; playback/rendering not measured |
 | Private replies despite shared controller IDs; late ACK isolation | Broker and integration shared-address, query/ACK matching, timeout/reconnect tests | Tested; arbitrary undocumented CI-V command coverage is not asserted |
-| Arrival order and exclusive TX; discard competing changes/audio | Broker arrival/execution checks and real-UDP TX tests | Tested for modeled PTT, CW, VOX, voice memory and tuner paths; real-client TX not executed |
-| Owner disconnect/heartbeat release with receive confirmation before handover | Broker cleanup tests; UDP heartbeat-loss test; CLI SIGTERM test | Tested against simulator; physical unkeying/RF not established |
+| Arrival order and exclusive TX; discard competing changes/audio | Broker arrival/execution checks and real-UDP TX tests | Tested for modeled PTT, CW, VOX, voice memory and tuner paths; physical PTT contention/handover also tested; other actual TX initiators and RF quality not measured |
+| Owner disconnect/heartbeat release with receive confirmation before handover | Broker cleanup tests; UDP heartbeat-loss test; CLI SIGTERM test | Simulator and physical MK2 CI-V receive-state confirmation tested; RF independently unmeasured |
 | Reconnect resets session/ownership and never intentionally replays old work | Timeout, media-release, replay invalidation, media-generation and partial-frame tests | Tested; native packets have no TX-epoch field, leaving a delayed never-before-seen packet ambiguity within one association |
 | Loss/reorder/duplicates/wrap/slow clients/bounded resources/auth failures | Packet/transport and 17 server tests; broker overload and integration retransmission cases | Tested within configured windows and synthetic faults; hostile sustained-load/long-soak testing remains |
 | Explicit supported/rejected negotiated formats | Server unsupported-format test and capability literal tests | Codec4/mono/48 kHz supported; other formats deliberately rejected |
 | Linux/macOS/Windows operation | Local macOS suite and lifecycle checks; multi-OS CI definition and service examples | Linux/macOS/Windows CI and local macOS verified within recorded scope; Raspberry Pi hardware and native Windows console/service stop remain |
-| Hardware receive/control and brief dummy-load TX | Requirements authorization and documented hardware procedure | Not executed; availability and dummy-load readiness still required |
+| Hardware receive/control and brief dummy-load TX | Recorded physical probe JSON below | Shared tuning, RX media, token renewal, PTT contention, owner disconnect and five handovers passed; RF power/quality not measured |
 | Secret handling, install/config/docs and source attribution | Config validation/redaction tests, CLI help, package inspection, README/operations/research/NOTICE | Implemented and locally checked; no real password is included in repository examples |
 
 ## Behavior limits to preserve
@@ -154,4 +154,47 @@ audio/scope observation; it does not retune or change modulation routing. Add
 brief PTT ownership/disconnect check. It cannot measure RF output or establish
 firmware version from those protocol checks. This probe has been syntax/guard tested and both its receive/control and PTT
 procedures passed end-to-end tests against the independent synthetic radio. It
-has not been run against physical hardware.
+also completed against the physical MK2; see the record below.
+
+## Physical MK2 record — 2026-11-08
+
+The operator confirmed that work with the radio at `10.0.1.25` was OK, clearing
+the previously pending availability/dummy-load gate. Credentials were supplied
+through a silent runtime prompt and were not written to source or test output.
+
+[Sanitized result JSON](hardware-results/2026-11-08-native-lan.json) records
+04:32:54–04:33:32 UTC on macOS/x64, Node 26.13.0:
+
+- Two native clients shared the splitter's single physical-radio session.
+- Both received sustained 48 kHz mono PCM and full scope frames: 3,482,880 and
+  3,586,560 audio bytes, and 1,086 and 1,113 scope frames respectively. Different
+  totals reflect their different open/close intervals; these are not packet-loss
+  measurements.
+- A 10 Hz frequency change through one client was read by the other and the
+  original frequency was restored. Modulation routing, mode and power were not
+  changed.
+- The upstream authentication token renewed during the 35-second observation.
+- Five short PTT cycles tested contention, owner disconnect, confirmed receive,
+  and handover. Both clients were confirmed in TX when owning it; the competing
+  request was rejected; final receive state was confirmed. The probe then closed
+  its sessions.
+
+Reproduce only with current radio availability and appropriate dummy-load
+readiness established, using the normal runtime environment:
+
+```sh
+node scripts/hardware-smoke.js --run --radio-available --check-tuning \
+  --observe-seconds 35 --tx --dummy-load --handover-cycles 5
+```
+
+Exploratory attempts included generic CI-V rejections and one startup
+authentication-status failure. Command/state diagnostics were added, and the
+final instrumented run passed, but the earlier failures' cause was not
+established. This short run is not a long soak or proof that intermittent
+firmware/network timing issues cannot occur. Diagnostics print only whitelisted
+status fields, never raw authentication packets or token values.
+
+TX assertions use CI-V ACKs plus independent TX/RX state reads. They do not
+measure radiated output, dummy-load power, modulation quality or audible audio.
+Physical tests of CW/VOX/tuner/voice-memory cleanup, forced process death, and
+network-loss RF behavior remain outside this hardware record.

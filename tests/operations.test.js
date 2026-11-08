@@ -125,6 +125,11 @@ test('hardware probe requires explicit availability before reading config or ope
     const tx = spawnSync(process.execPath, ['scripts/hardware-smoke.js', '--run', '--radio-available', '--tx'], { encoding: 'utf8', env: {} });
     assert.equal(tx.status, 1);
     assert.match(tx.stderr, /dummy-load/);
+    for (const args of [['--observe-seconds', '121'], ['--handover-cycles', '0']]) {
+        const bad = spawnSync(process.execPath, ['scripts/hardware-smoke.js', '--run', '--radio-available', ...args], { encoding: 'utf8', env: {} });
+        assert.equal(bad.status, 1);
+        assert.ok(bad.stderr.includes(args[0]));
+    }
 });
 
 for (const tx of [false, true]) {
@@ -138,7 +143,9 @@ for (const tx of [false, true]) {
             ICOM_RADIO_CONTROL_PORT: String(address.controlPort), ICOM_RADIO_CIV_PORT: String(address.civPort),
             ICOM_RADIO_AUDIO_PORT: String(address.audioPort) });
         const args = ['scripts/hardware-smoke.js', '--run', '--radio-available'];
-        if (tx) args.push('--tx', '--dummy-load');
+        args.push('--check-tuning');
+        if (tx) args.push('--tx', '--dummy-load', '--handover-cycles', '2');
+        else args.push('--observe-seconds', '1');
         const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
         let stdout = '', stderr = '', exited = false, exitCode;
         child.stdout.on('data', (bytes) => { stdout += bytes.toString(); });
@@ -158,12 +165,16 @@ for (const tx of [false, true]) {
         const result = JSON.parse(stdout);
         assert.equal(result.result, 'pass');
         assert.equal(result.clients, 2);
+        assert.match(result.tuningCheck, /original restored/);
+        assert.equal(result.observationSeconds, tx ? 0 : 1);
         assert.ok(result.audioBytes.every((n) => n > 0));
         assert.ok(result.scopeFrames.every((n) => n > 0));
         assert.equal(radio.connections.control, 1);
         assert.equal(radio.ptt, false, 'probe exits with simulated radio in receive');
         assert.equal(radio.commands.some((f) => f[4] === 0x1c && f[5] === 0 && f[6] === 1), tx);
         assert.equal(result.pttOwnershipTest.startsWith('passed'), tx);
+        assert.equal(result.pttHandoverTest.startsWith('both owners confirmed'), tx);
+        assert.equal(result.handoverCycles, tx ? 2 : 0);
         assert.equal(stdout.includes('testpass') || stderr.includes('testpass'), false);
     });
 }

@@ -1,0 +1,28 @@
+{
+  "result": "pass",
+  "began": "2026-11-08T04:32:54.773Z",
+  "finished": "2026-11-08T04:33:32.241Z",
+  "platform": "darwin",
+  "node": "v26.13.0",
+  "clients": 2,
+  "codec": "4 / 48000 Hz mono PCM16",
+  "radioAddress": "b6",
+  "identity": "IC-7300MK2",
+  "frequencyRead": true,
+  "modeRead": true,
+  "tuningCheck": "10 Hz change observed by second client and original restored",
+  "observationSeconds": 35,
+  "upstreamTokenRenewed": true,
+  "handoverCycles": 5,
+  "audioBytes": [
+    3482880,
+    3586560
+  ],
+  "scopeFrames": [
+    1086,
+    1113
+  ],
+  "pttHandoverTest": "both owners confirmed TX; final receive confirmed",
+  "pttOwnershipTest": "passed via protocol replies; RF not measured",
+  "limits": "Firmware, RF power/quality, audible playback and long-duration reliability require independent observations."
+}
