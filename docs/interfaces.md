@@ -151,6 +151,9 @@ stop a splitter already running on a different computer.
 
 - **Connected** means the radio transport and the broker's initial safety checks
   are ready. Connecting/recovery states do not mean clients can operate yet.
+- **RX/TX** reflects the most recent fresh radio state while the connection is ready.
+  Reserved or pending transmission control is shown separately; it still requires
+  confirmation before closing. This is protocol state, not an RF power measurement.
 - **Radio ping** is measured native LAN heartbeat round-trip time. It uses the
   existing heartbeat traffic; opening the Dashboard does not send extra probes.
   A dash or unavailable/stale label means no recent valid measurement exists.

@@ -49,7 +49,8 @@ function contentLines(app) {
         const physical = metrics.physicalTotal;
         return [
             s.firstRun ? 'WELCOME — Set up your radio in Settings (press 4).' : `Radio: ${s.connecting ? 'Connecting...' : connected ? 'Connected' : s.running ? 'Connecting / reconnecting' : 'Stopped'}`,
-            `Mode: ${s.txActive ? 'TRANSMITTING' : connected ? 'Receive' : 'Unavailable'}    Clients: ${clients.length}    Upstream sessions: ${number(status.connectedUpstreamSessions, 0)}`,
+            `Radio state: ${['RX', 'TX'].includes(s.dashboard?.rxTx) ? s.dashboard.rxTx : 'Unavailable'}    TX control: ${safe(s.dashboard?.txControl) || 'Unavailable'}`,
+            `Clients: ${clients.length}    Upstream sessions: ${number(status.connectedUpstreamSessions, 0)}`,
             `Uptime: ${duration(metrics.elapsedMs)}    Queue: ${number(status.broker?.queueDepth, 0)} requests`,
             '', 'LIVE PERFORMANCE',
             `Radio ping RTT: ${ms(latency.pingMs)}${pingStale ? ' (stale)' : ''}`,

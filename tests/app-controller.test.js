@@ -202,3 +202,20 @@ test('failed credential writes redact candidate and imported passwords while pre
     assert.equal(c.getSettings().values.ICOM_PASSWORD_FILE, ''); assert.equal(stored, 'testpass');
     await assert.rejects(c.saveSettings({ ICOM_RADIO_HOST: 'bad-address' }), /Radio address must be an IPv4 address/);
 });
+
+test('actual RX/TX display stays distinct from quiet or pending TX ownership confirmation', async (t) => {
+    const { controller: c, services } = await setup(t); await c.saveSettings(valid()); await c.start(); const service = services[0];
+    service.broker.owner = {}; service.broker.observedTx = false;
+    assert.equal(c.getState().dashboard.rxTx, 'RX', 'a quiet VOX/automatic owner is not observed transmission');
+    assert.equal(c.getState().dashboard.txControl, 'Owned or pending'); assert.equal(c.getState().txActive, true);
+    assert.equal((await c.close()).requiresConfirmation, true, 'quiet ownership still protects close');
+    service.broker.observedTx = true; assert.equal(c.getState().dashboard.rxTx, 'TX');
+    service.broker.ready = false; assert.equal(c.getState().dashboard.rxTx, 'Unavailable');
+    assert.equal((await c.close()).requiresConfirmation, true, 'unready display must not weaken the gate');
+    service.broker.owner = null; service.broker.observedTx = false; service.broker.ready = true;
+    service.broker.pending = { policy: { tx: 'ptt' } };
+    assert.equal(c.getState().dashboard.rxTx, 'RX'); assert.equal(c.getState().dashboard.txControl, 'Owned or pending');
+    assert.equal((await c.close()).requiresConfirmation, true);
+    service.broker.pending = null; assert.equal(c.getState().dashboard.txControl, 'Available');
+    service.session.connected = false; assert.equal(c.getState().dashboard.rxTx, 'Unavailable');
+});

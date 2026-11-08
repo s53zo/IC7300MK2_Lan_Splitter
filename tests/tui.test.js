@@ -162,3 +162,21 @@ test('failed save redacts a newly entered password before displaying an error', 
     await key(app, 's');
     assert.match(app.message, /\[redacted\]/); assert.equal(output.text.includes('new-secret'), false);
 });
+
+test('observed radio RX/TX stays distinct from quiet or pending TX ownership', async (t) => {
+    const { app } = await setup(t); app.view = 0;
+    app.state.status.radio.connected = true;
+    app.state.txActive = true;
+    app.state.dashboard = { rxTx: 'RX', txControl: 'Owned or pending' };
+    let screen = renderScreen(app, 120, 40);
+    assert.match(screen, /Radio state: RX\s+TX control: Owned or pending/);
+    assert.equal(screen.includes('TRANSMITTING'), false, 'quiet ownership is not observed transmission');
+    app.state.txActive = false;
+    app.state.dashboard = { rxTx: 'TX', txControl: 'Available' };
+    screen = renderScreen(app, 120, 40);
+    assert.match(screen, /Radio state: TX\s+TX control: Available/);
+    delete app.state.dashboard;
+    screen = renderScreen(app, 120, 40);
+    assert.match(screen, /Radio state: Unavailable/);
+    assert.equal(screen.includes('Radio state: RX'), false, 'connection alone cannot manufacture observed RX');
+});

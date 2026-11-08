@@ -153,3 +153,23 @@ from actual state-changing dispatch/outcome, notifications and lifecycle changes
 It only counts possible queued-result sharing; delivery still obeys the original
 mutation epochs, FIFO and TTL checks. No selective invalidation, cached-read
 shortcut or audio recovery/pacing change is enabled by this instrumentation.
+
+## Local interfaces
+
+`src/app/controller.js` owns a single in-process Splitter for either interface.
+Its schema validates every public CLI setting; protected persistence keeps saved
+values separate from the active service until explicit reconnect. Normal close
+fences new work and uses the broker's existing release/shutdown path. Owner,
+observed TX and queued/pending initiators govern confirmation; actual displayed
+RX/TX comes from fresh observed radio state, with ownership reported separately.
+App-directory and radio-control-endpoint loopback mutexes prevent duplicate local
+profiles from opening competing sessions. Older releases do not share this lock.
+
+Desktop runs local packaged HTML in an isolated, sandboxed Electron renderer.
+A narrow main-process IPC allowlist validates the owning top-level local frame;
+there is no HTTP management listener or remote page. Its credential adapter uses
+native asynchronous safeStorage encryption. Linux uses the same controller from
+a built-in readline/ANSI terminal interface, with an explicitly owner-only,
+unencrypted credential file. Metrics/history are bounded session memory, not a
+persistent monitoring database. Existing heartbeat replies provide ping RTT;
+reading the interface creates no additional radio probes or upstream session.

@@ -84,6 +84,8 @@ async function run({ window, controller, outputDirectory, directory, credentialS
         window.setSize(1120, 800); await nav('dashboard');
         peers[0].sendCiv(frame(0x1c, [0, 1], 0xe1));
         await until(() => controller.getState().txActive && radio.ptt, 'synthetic TX ownership');
+        await until(() => controller.getState().dashboard.rxTx === 'TX', 'fresh observed radio TX state');
+        await until(() => js("document.getElementById('rx-indicator').textContent === 'TX'"), 'displayed observed TX state');
         window.close(); await until(() => js("document.getElementById('confirm-dialog').open"), 'TX close confirmation');
         await capture('07-transmission-confirmation'); await click('confirm-cancel');
         assert.equal(controller.getState().running, true); assert.equal(radio.ptt, true);
@@ -105,7 +107,7 @@ async function run({ window, controller, outputDirectory, directory, credentialS
         const result = { result: 'pass', platform: process.platform, architecture: process.arch, packaged: require('electron').app.isPackaged,
             firstRun: true, allSettingsFields: fields.length, nativeCredentialRoundTrip: true, nativeCredentialEncryptedOnDisk: true,
             clients: 2, upstreamSessions: 1, privateReplies: true, exactAudioAndScope: true, cacheHits: true, measuredPing: true,
-            saveWithoutApplying: true, reconnectCancellation: true, txCloseCancellation: true, txCloseConfirmedRelease: true,
+            saveWithoutApplying: true, reconnectCancellation: true, txCloseCancellation: true, txCloseConfirmedRelease: true, observedRxTxDisplay: true,
             automaticConnectionOnReopen: true, historyReset: true, narrowLayout: true, redactedDiagnostics: true,
             physicalRadioUsed: false, screenshots: (await fs.readdir(outputDirectory)).filter((name) => name.endsWith('.png')) };
         await fs.writeFile(path.join(outputDirectory, 'result.json'), JSON.stringify(result, null, 2) + '\n'); console.log(JSON.stringify(result));

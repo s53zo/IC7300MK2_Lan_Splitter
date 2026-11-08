@@ -320,7 +320,9 @@ class AppController extends EventEmitter {
             settings: this.getSettings(),
             activeSettings: this.activeValues ? { values: { ...this.activeValues, ICOM_PASSWORD: '', ICOM_PASSWORD_FILE: '' } } : null,
             uptimeMs: this.now() - this.createdAt,
-            dashboard: { connection: status.radio.state, rxTx: this.txActive() ? 'TX' : status.radio.connected && status.broker.ready ? 'RX' : 'Unavailable',
+            dashboard: { connection: status.radio.state, rxTx: status.radio.connected && status.broker.ready
+                ? this.service.broker.observedTx ? 'TX' : 'RX' : 'Unavailable',
+                txControl: this.txActive() ? 'Owned or pending' : 'Available',
                 clientCount: status.nativeClients.authenticated, hitPercent: status.cache.requests ? status.cache.hits / status.cache.requests * 100 : 0,
                 ...this.rates, ...this.latency },
         };

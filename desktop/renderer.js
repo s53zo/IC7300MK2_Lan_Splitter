@@ -104,8 +104,9 @@ function render(next) {
     const status = state.status || {}, broker = status.broker || {}, cache = status.cache || {}, metrics = status.metrics || {};
     const radio = status.radio || {}, counts = status.nativeClients || {}, rates = state.rates || {}, timing = state.latency || {};
     const connected = Boolean(radio.connected), ready = Boolean(broker.ready);
-    const label = state.connecting ? 'Connecting' : connected && ready ? state.txActive ? 'Transmitting' : 'Connected' : state.running ? 'Reconnecting' : 'Stopped';
-    text('state-badge', label); byId('state-badge').className = `badge${connected && ready ? state.txActive ? ' tx' : ' live' : ''}`;
+    const rxTx = state.dashboard?.rxTx || 'Unavailable';
+    const label = state.connecting ? 'Connecting' : connected && ready ? rxTx === 'TX' ? 'Transmitting' : state.txActive ? 'TX control reserved' : 'Connected' : state.running ? 'Reconnecting' : 'Stopped';
+    text('state-badge', label); byId('state-badge').className = `badge${connected && ready ? rxTx === 'TX' ? ' tx' : ' live' : ''}`;
     text('rail-status', label); byId('rail-dot').classList.toggle('live', connected && ready);
     text('connection-title', connected && ready ? 'Your radio is connected' : state.connecting ? 'Connecting to your radio…' : state.firstRun ? 'Let’s connect your radio' : state.running ? 'Restoring the connection…' : 'Ready when you are');
     const values = state.activeSettings?.values || state.settings?.values || settings.values || {};
@@ -119,8 +120,8 @@ function render(next) {
     text('ping-ms', timing.pingStale ? '—' : milliseconds(timing.pingMs));
     byId('ping-ms').title = timing.pingStale ? 'The last ping measurement is stale.' : 'Measured native Icom LAN round-trip time';
     text('response-ms', milliseconds(timing.responseMs)); text('queue-ms', milliseconds(timing.queueMs));
-    text('rx-indicator', state.txActive ? 'TX' : connected && ready ? 'RX' : '—'); byId('rx-indicator').classList.toggle('tx', Boolean(state.txActive));
-    text('health-title', state.txActive ? 'Transmission ownership is active' : connected && ready ? 'Radio is receiving' : 'Radio state is unavailable');
+    text('rx-indicator', rxTx === 'Unavailable' ? '—' : rxTx); byId('rx-indicator').classList.toggle('tx', rxTx === 'TX');
+    text('health-title', rxTx === 'TX' ? 'Radio is transmitting' : rxTx === 'RX' ? state.txActive ? 'Radio is receiving · TX control is reserved' : 'Radio is receiving' : 'Radio state is unavailable');
     const audio = metrics.transport?.audio || {};
     text('health-detail', connected ? `${count(status.connectedUpstreamSessions)} radio connection · ${count(audio.lost)} radio audio packets reported lost · queue ${count(broker.queueDepth)}` : 'Connection and audio transport health will appear here.');
     text('timeout-count', `${count(metrics.radioTimeouts)} radio timeouts`);
