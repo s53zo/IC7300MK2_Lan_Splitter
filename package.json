@@ -32,7 +32,8 @@
     "desktop:install": "node node_modules/electron/install.js",
     "desktop:start": "electron desktop/main.js",
     "desktop:build": "node scripts/desktop-build.js",
-    "desktop:smoke": "node scripts/desktop-installed-smoke.js"
+    "desktop:smoke": "node scripts/desktop-installed-smoke.js",
+    "web:smoke": "electron scripts/web-ui-smoke.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

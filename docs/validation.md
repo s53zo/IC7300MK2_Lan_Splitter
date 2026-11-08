@@ -284,3 +284,19 @@ It checks actual physical radio-read counts as well as displayed active values
 and pending configuration. Terminal and protected-store tests cover editing,
 clearing, validation and persistence. Active lifetime columns accompany existing
 session-total hit counters; changing lifetimes does not erase earlier counts.
+
+## Linux-only HTTPS management
+
+The Linux service-owned web mode is covered by authentication/session, exact
+Host/Origin and CSRF, request/rate bounds, static routing, import-path rejection,
+credential rotation, protected bootstrap/state/TLS and graceful lifecycle tests.
+The default interactive controller startup remains unchanged; web hosting loads
+configuration without waiting for radio recovery before exposing management.
+
+An ordinary sandboxed HTTPS browser test (no preload or renderer Node) covers
+all five screens/89 fields, setup and radio login, Secure/HttpOnly/SameSite
+cookies, browser-local password import, redacted download, two native clients,
+private/cache/media behavior, measured ping, pending/apply settings, TX Stop
+confirmation and confirmed release. Closing/reopening the browser and signing
+out preserve the server and radio. OpenSSL-based actual TLS and ARM source tests
+were run. Safari/Firefox rendering and full physical RF output are not claimed.

@@ -5,7 +5,7 @@
 // binary that silently depends on files beside it.
 const fs = require('node:fs');
 const path = require('node:path');
-const { builtinModules } = require('node:module');
+const { isBuiltin } = require('node:module');
 const { createHash } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
@@ -25,7 +25,7 @@ function bundle(root = ROOT) {
             const literal = /^\s*(['"])([^'"]+)\1\s*$/.exec(call[1]);
             if (!literal) throw new Error(`Dynamic require in ${id}`);
             const name = literal[2];
-            if (name.startsWith('node:') && builtinModules.includes(name.slice(5))) continue;
+            if (name.startsWith('node:') && isBuiltin(name)) continue;
             if (!name.startsWith('.')) throw new Error(`External module ${name} in ${id}`);
             const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(id), name)) + '.js';
             if (!resolved.startsWith('src/')) throw new Error('Module escapes src');
@@ -53,8 +53,10 @@ async function main() {
     const entry = path.join(work, 'entry.cjs'); fs.writeFileSync(entry, bundle());
     const executable = path.join(stage, `icom-lan-splitter${process.platform === 'win32' ? '.exe' : ''}`);
     const config = path.join(work, 'sea.json');
+    const assets = process.platform === 'linux' ? Object.fromEntries(Object.entries(require('../src/web/assets').SEA_FILES)
+        .map(([name, source]) => [`web/${name}`, path.join(ROOT, source)])) : {};
     fs.writeFileSync(config, JSON.stringify({ main: entry, output: executable, disableExperimentalSEAWarning: true,
-        useCodeCache: false, useSnapshot: false, execArgvExtension: 'none' }));
+        useCodeCache: false, useSnapshot: false, execArgvExtension: 'none', assets }));
     run(process.execPath, ['--build-sea', config]); fs.chmodSync(executable, 0o755);
     if (process.platform === 'darwin') {
         run('codesign', ['--sign', '-', '--force', executable]);

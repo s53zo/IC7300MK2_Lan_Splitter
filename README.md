@@ -44,6 +44,14 @@ until a maintainer publishes them. Optional headless bundles remain available.
 
 ![Desktop dashboard with synthetic radio test data](docs/screenshots/dashboard.png)
 
+## Linux headless web management
+
+New source builds also support a boot-persistent Linux service with the same
+configuration and statistics in an HTTPS browser interface, normally on port
+**50004**. Closing the browser or signing out leaves the service running. This
+mode is Linux-only; Windows/Mac desktop behavior is unchanged. It was added after
+the v0.8.1 downloads above. See [Linux web service setup](docs/linux-web-service.md).
+
 ## Headless/source usage
 
 Install Node.js 22 or newer, then clone or download this repository. There are

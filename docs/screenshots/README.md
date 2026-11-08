@@ -14,3 +14,7 @@ Intel Mac and Apple Silicon Mac, including errors and advanced configuration.
 [Per-command cache settings](per-command-cache.png) shows the optional overrides
 added in v0.8.1. Blank fields inherit their family default; saved overrides wait
 for reconnect before changing the active connection.
+
+The Linux headless mode reuses these views in an ordinary HTTPS browser:
+[login](linux-web-login.png) and [service dashboard](linux-web-dashboard.png).
+These also use loopback fixtures; closing the browser leaves the service running.

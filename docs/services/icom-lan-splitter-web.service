@@ -1,0 +1,27 @@
+[Unit]
+Description=IC-7300MK2 splitter with Linux HTTPS management
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=icom-splitter
+Group=icom-splitter
+WorkingDirectory=/opt/icom-splitter/current
+EnvironmentFile=/etc/icom-splitter/splitter.env
+Environment=ICOM_CONFIG_DIR=/var/lib/icom-splitter
+Environment=ICOM_WEB_PORT=50004
+ExecStart=/usr/bin/node /opt/icom-splitter/current/src/cli.js --web
+StateDirectory=icom-splitter
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

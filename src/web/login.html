@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<title>Sign in · IC-7300MK2 LAN Splitter</title>
+<link rel="stylesheet" href="login.css">
+<script defer src="login.js"></script>
+</head>
+<body>
+<main class="login-shell">
+<section class="introduction" aria-label="About this service">
+  <div class="brand"><span class="brand-symbol" aria-hidden="true">≋</span><span>LAN SPLITTER<small>IC-7300MK2</small></span></div>
+  <div class="introduction-copy"><p class="eyebrow">YOUR RADIO, CONNECTED</p><h1>One connection.<br>Room for everyone.</h1><p>Manage your Linux splitter from any computer on your local network.</p></div>
+  <p class="service-note">Closing your browser leaves the splitter running.</p>
+</section>
+<section class="login-panel" aria-labelledby="login-title">
+  <p class="eyebrow">LINUX MANAGEMENT</p><h2 id="login-title">Sign in to your splitter</h2><p id="login-description">Use the username and password configured on your radio.</p>
+  <div class="server-address"><span class="status-dot" aria-hidden="true"></span><span id="server-address">Connecting to service…</span></div>
+  <form id="login-form">
+    <div id="credentials-fields"><label for="username">Radio username</label><input id="username" name="username" type="text" autocomplete="username" maxlength="16" autocapitalize="none" spellcheck="false"><label for="password">Radio password</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="16"></div>
+    <div id="setup-fields" hidden><label for="setup-token">Setup access code</label><input id="setup-token" name="setup-token" type="password" autocomplete="off" spellcheck="false"><p class="field-note">Use the access code from the private setup file on your Linux server. The service shows the file’s location when it starts. After setup, sign in with the radio credentials.</p></div>
+    <p id="login-error" class="error-message" role="alert" hidden></p>
+    <button id="sign-in" type="submit">Sign in</button>
+  </form>
+  <p class="privacy-note">Your credentials are sent securely to this Linux server. They are not stored in this browser by the splitter.</p>
+  <details class="certificate-help"><summary>About the browser’s certificate notice</summary><p>This local service may use its own certificate. If your browser asks, check that the address belongs to your Linux server before trusting it. Your administrator can also install a certificate your browser already trusts.</p></details>
+</section>
+</main>
+</body>
+</html>

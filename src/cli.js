@@ -3,11 +3,12 @@
 
 const { config } = require('./config');
 
-const HELP = `Usage: icom-lan-splitter [--help | --headless | --tui [--config-dir DIRECTORY]]
+const HELP = `Usage: icom-lan-splitter [--help | --headless | --tui | --web] [--config-dir DIRECTORY]
 
 Interface:
   --tui                Open the keyboard-operated local interface
-  --config-dir PATH    Optional settings directory for --tui
+  --config-dir PATH    Optional settings directory for --tui or --web
+  --web                Linux-only HTTPS service with browser settings/statistics
   --headless           Run the environment-configured service
   Linux executable opens the terminal interface when launched interactively.
 
@@ -18,6 +19,10 @@ Required environment for headless mode:
   ICOM_PASSWORD         Alternative runtime environment password
 
 Optional:
+  ICOM_CONFIG_DIR      Linux web service settings/state directory
+  ICOM_WEB_BIND_ADDRESS Web listener address; defaults to the configured listen address
+  ICOM_WEB_PORT         HTTPS port; defaults to one above the native ports (50004)
+  ICOM_WEB_TLS_CERT / ICOM_WEB_TLS_KEY  Optional certificate/key; otherwise generated locally
   ICOM_BIND_ADDRESS    Listener interface; default 127.0.0.1
   ICOM_LISTEN_CONTROL_PORT / ICOM_LISTEN_CIV_PORT / ICOM_LISTEN_AUDIO_PORT
   ICOM_RADIO_CONTROL_PORT / ICOM_RADIO_CIV_PORT / ICOM_RADIO_AUDIO_PORT
@@ -76,6 +81,17 @@ function statusSnapshot(service) {
 async function main({ interactiveDefault = false } = {}) {
     if (process.argv.includes('--help') || process.argv.includes('-h')) { process.stdout.write(HELP); return; }
     const args = process.argv.slice(2);
+    if (args[0] === '--web') {
+        if (process.platform !== 'linux') throw new Error('The browser service is available only on Linux headless systems');
+        if (!(args.length === 1 || (args.length === 3 && args[1] === '--config-dir'))) throw new Error('Use --web [--config-dir DIRECTORY]');
+        const web = await require('./web/main').runWeb({ directory: args[2] });
+        process.on('SIGUSR2', () => process.stdout.write(`${JSON.stringify(web.controller.getState().status)}\n`));
+        const address = web.address();
+        process.stdout.write(`Linux web service ready: HTTPS port ${address.port}\n`);
+        if (web.tls.selfSigned) process.stdout.write('A local HTTPS certificate is used; approve it in your browser on first access.\n');
+        if (web.setupRequired) process.stdout.write(`First setup: sign in as setup using the private token file ${web.setupTokenFile}\n`);
+        return;
+    }
     if (args[0] === '--tui' || (interactiveDefault && !args.length && process.stdin.isTTY)) {
         if (args.length && !(args.length === 1 || (args.length === 3 && args[1] === '--config-dir'))) throw new Error('Use --tui [--config-dir DIRECTORY]');
         await require('./app/tui').runTui({ directory: args[2] }); return;

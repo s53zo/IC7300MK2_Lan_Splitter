@@ -4,7 +4,7 @@ const globals = require('globals');
 module.exports = [
     { ignores: ['node_modules/**', '.omx/**'] },
     js.configs.recommended,
-    { files: ['desktop/renderer.js'], languageOptions: { globals: globals.browser } },
+    { files: ['desktop/renderer.js', 'src/web/bridge.js', 'src/web/login.js'], languageOptions: { globals: globals.browser } },
     {
         files: ['**/*.js', '**/*.cjs'],
         languageOptions: { ecmaVersion: 2023, sourceType: 'commonjs', globals: globals.node },

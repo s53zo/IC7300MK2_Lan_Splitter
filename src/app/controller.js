@@ -76,7 +76,7 @@ class AppController extends EventEmitter {
         this.events.push({ time: this.now(), level, message });
         if (this.events.length > 100) this.events.shift();
     }
-    async initialize() {
+    async initialize({ autoStart = true } = {}) {
         if (this.initializing) return this.initializing;
         this.initializing = (async () => {
             this.releaseApp = await this.acquireLock(`app:${this.directory}`);
@@ -93,7 +93,7 @@ class AppController extends EventEmitter {
             }
             this.timer = setInterval(() => this.sample(), this.sampleMs); this.timer.unref?.();
             this.sample();
-            if (!this.firstRun) await this.start();
+            if (autoStart && !this.firstRun) await this.start();
             return this.getState();
         })();
         return this.initializing;
