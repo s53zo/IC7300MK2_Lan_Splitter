@@ -26,7 +26,9 @@
     "test": "node --test tests/*.test.js",
     "check": "node scripts/check.js",
     "test:capacity": "node scripts/benchmark.js",
-    "lint": "eslint src tests scripts eslint.config.cjs"
+    "lint": "eslint src tests scripts eslint.config.cjs",
+    "release:build": "node scripts/release-build.js",
+    "release:smoke": "node scripts/release-smoke.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

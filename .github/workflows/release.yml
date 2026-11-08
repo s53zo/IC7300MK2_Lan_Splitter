@@ -1,0 +1,92 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      label: ${{ steps.meta.outputs.label }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '26.13.0'
+      - id: meta
+        run: node scripts/release-meta.js
+  build:
+    needs: metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            platform: win32
+            arch: x64
+          - runner: macos-15-intel
+            platform: darwin
+            arch: x64
+          - runner: macos-15
+            platform: darwin
+            arch: arm64
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_LABEL: ${{ needs.metadata.outputs.label }}
+      EXPECTED_PLATFORM: ${{ matrix.platform }}
+      EXPECTED_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '26.13.0'
+          architecture: ${{ matrix.arch }}
+      - name: Verify native architecture
+        run: node -e "if(process.platform!==process.env.EXPECTED_PLATFORM || process.arch!==process.env.EXPECTED_ARCH) process.exit(1)"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run check
+      - run: npm test
+      - run: npm pack --dry-run
+      - id: build
+        run: npm run release:build
+      - name: Smoke test extracted standalone executable
+        env:
+          EXE_PATH: ${{ steps.build.outputs.executable }}
+        run: node scripts/release-smoke.js --executable "$EXE_PATH"
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: executable-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+  draft:
+    needs: [metadata, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '26.13.0'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: executable-*
+          merge-multiple: true
+          path: dist
+      - name: Prepare unpublished release and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-publish.js

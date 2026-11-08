@@ -7,3 +7,5 @@ node_modules/
 coverage/
 .omx/state/
 .omx/logs/
+.release/
+dist/

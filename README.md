@@ -106,3 +106,6 @@ test fixtures required by that command.
 - [Manuals, related projects, and source provenance](docs/research.md)
 
 AGPL-3.0-only; see [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).
+
+Standalone executables for Windows x64, Intel/Apple Silicon macOS and Linux x64/ARM64
+are prepared by GitHub Actions. See [downloads and release instructions](docs/releases.md).
