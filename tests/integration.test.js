@@ -54,7 +54,7 @@ test('all clients receive identical PCM and complete 475-point scope; one discon
 });
 
 test('TX lease rejects competing keying, writes and audio; owner disconnect confirms RX before handover', async (t) => {
-    const { radio, connect } = await setup(t);
+    const { radio, service, connect } = await setup(t);
     const owner = await connect();
     const other = await connect();
     owner.sendCiv(frame(0x1c, [0, 1]));
@@ -73,7 +73,8 @@ test('TX lease rejects competing keying, writes and audio; owner disconnect conf
     assert.equal(radio.txAudio.some((p) => p.bytes.equals(otherAudio)), false);
     assert.equal(radio.commands.slice(before).some((f) => f[4] === 5), false);
     await owner.close();
-    await until(() => !radio.ptt, 'PTT release after disconnect');
+    await until(() => !radio.ptt && service.broker.owner === null && !service.broker.releasing,
+        'confirmed RX and completed owner release after disconnect');
     other.sendCiv(frame(0x1c, [0, 1]));
     await until(() => radio.ptt, 'next owner TX');
     assert.equal(radio.commands.slice(before).some((f) => f[4] === 5), false, 'discarded change is never replayed');
