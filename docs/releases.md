@@ -217,3 +217,7 @@ result are written beneath `.release/screenshots/`. It never uses a physical
 radio. Linux native release jobs also run the default no-argument TUI in a real
 PTY with two synthetic clients and test confirmed shutdown. There are no cloud
 or remote-control dependencies in the installed interfaces.
+
+## Linux ARM64 kernel limitation
+
+Node 26.13.0's SEA builder has an [upstream issue on 16/64 KiB-page ARM kernels](https://github.com/nodejs/node/issues/67048). A fresh standalone build failed on the test Pi's 16 KiB kernel even though the ordinary Node runtime and source service worked. The CI ARM runner does not prove compatibility with every page size. On affected systems, use the source-based service with the existing supported Node runtime; no binary patch or runtime downgrade is applied. This limitation does not affect that service installation.

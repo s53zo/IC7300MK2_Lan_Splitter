@@ -76,6 +76,12 @@ jobs:
         env:
           EXE_PATH: ${{ steps.build.outputs.executable }}
         run: node scripts/tui-native-smoke.js --executable "$EXE_PATH"
+      - name: Smoke test packaged Linux HTTPS management and persistence
+        if: matrix.platform == 'linux'
+        env:
+          EXE_PATH: ${{ steps.build.outputs.executable }}
+        run: node scripts/web-packaged-smoke.js --executable "$EXE_PATH"
+        shell: bash
       - uses: actions/upload-artifact@v4
         with:
           name: executable-${{ matrix.platform }}-${{ matrix.arch }}

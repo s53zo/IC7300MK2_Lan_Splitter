@@ -20,3 +20,25 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm pack --dry-run
+  linux-package:
+    name: Packaged web (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_LABEL: ci-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '26.13.0'
+      - id: build
+        run: node scripts/release-build.js
+      - name: Verify extracted executable and embedded Linux web assets
+        env:
+          EXE_PATH: ${{ steps.build.outputs.executable }}
+        run: |
+          node scripts/release-smoke.js --executable "$EXE_PATH"
+          node scripts/web-packaged-smoke.js --executable "$EXE_PATH"

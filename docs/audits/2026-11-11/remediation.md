@@ -41,3 +41,9 @@ Counts overlap; do not add them to the full-suite total. Historical audit probes
 - Browser BFCache evidence: [remediation-bfcache.json](remediation-bfcache.json). Production-header and controlled-fixture outcomes are deliberately separate.
 - Fresh package/platform results and deployed commit are recorded in the delivery evidence after those gates run. Do not infer native Windows/ARM, interactive OS-vault, physicalradio or RF verification from local fixtures.
 - Pi access uses a per-connection SSH IPQoS=none option after default-QoS banner timeouts. This does not change host configuration. Deployment preserves saved configuration/credentials/TLS and boot-enabled service behavior, and is gated on RX; no physical TX test is authorized.
+
+### Additional native package observation
+
+The current ARM64 standalone was built on the Pi, but its launch failed on the Pi's 16 KiB-page kernel. A minimal hello-world SEA reproduced the failure independently of splitter code; ordinary Node26 ran, and103regressions passed under the service's Node24 runtime. This matches [Node issue67048](https://github.com/nodejs/node/issues/67048). Native standalone/web smoke is not passed on this kernel. The production deployment uses the existing source-based Node24 service, without a runtime downgrade or ELF patch. New CI jobs exercise extracted executables and packaged HTTPS assets on standard Linux x64/ARM runners; their results must be distinguished from this Pi kernel.
+
+The helper scripts/web-packaged-smoke.js was independently reviewed for loopback-only endpoints, private fixture state, pinnedTLS, exact native media and saved-profile/TLS reuse. No physical TX or production credentials are used. A packaged Linux web check is also wired into the existing release workflow, without publishing or creating a release in this task.
