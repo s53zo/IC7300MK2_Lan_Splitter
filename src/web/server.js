@@ -10,7 +10,7 @@ const SESSION_IDLE_MS = 30 * 60 * 1000;
 const SESSION_ABSOLUTE_MS = 24 * 60 * 60 * 1000;
 const STATIC_PATHS = new Set(['/', '/index.html', '/styles.css', '/renderer.js', '/bridge.js', '/login', '/login.html', '/login.js', '/login.css', '/favicon.svg']);
 const READ_ACTIONS = new Set(['state', 'settings', 'fields', 'interfaces', 'defaults', 'export']);
-const ACTIONS = new Set([...READ_ACTIONS, 'save', 'start', 'stop', 'reconnect']);
+const ACTIONS = new Set([...READ_ACTIONS, 'save', 'start', 'stop', 'reconnect', 'reset-statistics']);
 const randomToken = () => randomBytes(32).toString('hex');
 const hash = (value) => createHash('sha256').update(value).digest();
 const equals = (left, right) => timingSafeEqual(hash(String(left)), hash(String(right)));
@@ -191,6 +191,7 @@ class WebServer {
         case 'start': return controller.start();
         case 'stop': return controller.stop({ confirmedTx: payload?.confirmedTx === true });
         case 'reconnect': return controller.reconnect({ confirmedTx: payload?.confirmedTx === true });
+        case 'reset-statistics': return controller.resetStatistics();
         case 'export': return controller.diagnosticReport();
         default: fail(400, 'Unsupported management action');
         }

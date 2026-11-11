@@ -52,6 +52,7 @@ class AppController extends EventEmitter {
         this.values = defaults(); this.password = ''; this.secrets = new Set();
         this.activeValues = null; this.activePassword = null;
         this.firstRun = true; this.lastError = null; this.connecting = false; this.closed = false;
+        this.statisticsStartedAt = this.createdAt;
         this.service = null; this.history = []; this.events = []; this.totals = { cache: null, metrics: null };
         this.rates = { requestsPerSecond: 0, radioPerSecond: 0, hitsPerSecond: 0 };
         this.latency = { pingMs: null, pingUpdatedAt: null, pingStale: true, responseMs: null, queueMs: null };
@@ -254,6 +255,27 @@ class AppController extends EventEmitter {
         });
         return this.closing;
     }
+    resetStatistics() {
+        this.totals = { cache: null, metrics: null };
+        this.service?.broker.resetStatistics();
+        const streams = [...Object.values(this.service?.session || {}),
+            ...[...(this.service?.server.clients.values() || [])].flatMap((client) => Object.values(client.streams || {}))];
+        for (const stream of streams) {
+            if (stream?.counters) for (const key of Object.keys(stream.counters)) stream.counters[key] = 0;
+            if (typeof stream?.dropped === 'number') stream.dropped = 0;
+        }
+        if (this.service?.server.stats) for (const key of Object.keys(this.service.server.stats)) this.service.server.stats[key] = 0;
+        this.statisticsStartedAt = this.now();
+        this.history = [];
+        this.previous = { time: this.statisticsStartedAt, requests: 0, hits: 0, physical: 0, timings: {} };
+        this.rates = { requestsPerSecond: 0, radioPerSecond: 0, hitsPerSecond: 0 };
+        this.latency.responseMs = null; this.latency.queueMs = null;
+        delete this.responseMsUpdated; delete this.queueMsUpdated;
+        this.event('info', 'Statistics reset.');
+        const state = this.getState();
+        this.emit('snapshot', state);
+        return state;
+    }
     rawState() {
         const raw = this.service ? statusSnapshot(this.service) : {
             radio: { state: 'stopped', connected: false }, broker: { ready: false, queueDepth: 0, pending: false, txOwned: false },
@@ -319,7 +341,7 @@ class AppController extends EventEmitter {
             status, clients: this.clientRows(), history: this.history, events: this.events, rates: this.rates, latency: this.latency,
             settings: this.getSettings(),
             activeSettings: this.activeValues ? { values: { ...this.activeValues, ICOM_PASSWORD: '', ICOM_PASSWORD_FILE: '' } } : null,
-            uptimeMs: this.now() - this.createdAt,
+            uptimeMs: this.now() - this.createdAt, statisticsStartedAt: this.statisticsStartedAt,
             dashboard: { connection: status.radio.state, rxTx: status.radio.connected && status.broker.ready
                 ? this.service.broker.observedTx ? 'TX' : 'RX' : 'Unavailable',
                 txControl: this.txActive() ? 'Owned or pending' : 'Available',
@@ -332,10 +354,10 @@ class AppController extends EventEmitter {
         const state = this.getState();
         const values = { ...state.settings.values }; delete values.ICOM_PASSWORD; delete values.ICOM_PASSWORD_FILE; delete values.ICOM_USERNAME;
         return this.redact({ format: 1, generatedAt: new Date(this.now()).toISOString(), platform: process.platform, architecture: process.arch,
-            connection: state.status, settings: values, pendingChanges: state.pendingChanges,
+            statisticsStartedAt: this.statisticsStartedAt, connection: state.status, settings: values, pendingChanges: state.pendingChanges,
             clients: state.clients.map(({ authenticated, civReady, audioReady, txOwner, connectedMs, streams }) => ({ authenticated, civReady, audioReady, txOwner, connectedMs, streams })),
             events: state.events, latency: state.latency, rates: state.rates,
-            notes: ['Statistics cover this application session; graphs retain at most 15 minutes.', 'Ping is native LAN round-trip time; response and queue delays are separate gateway measurements.', 'Audio transport counters do not measure audible playback quality.'] });
+            notes: ['Statistics cover the period since the latest reset or application start; graphs retain at most 15 minutes.', 'Ping is native LAN round-trip time; response and queue delays are separate gateway measurements.', 'Audio transport counters do not measure audible playback quality.'] });
     }
 }
 module.exports = { AppController };

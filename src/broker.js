@@ -117,6 +117,24 @@ class Broker extends EventEmitter {
     if (session.connected) queueMicrotask(() => this.synchronize());
   }
 
+  resetStatistics() {
+    // Retire only accounting for existing admissions; their work and replies
+    // continue unchanged. Physical sends after this boundary still count.
+    for (const item of [...this.queue, this.pending].filter(Boolean)) {
+      item.suppressCacheStatistics = true;
+      if (!item.internal) item.metricsFinished = true;
+    }
+    this.metrics = new BrokerMetrics(this.options.now);
+    for (const key of Object.keys(this.cacheStats)) this.cacheStats[key] = 0;
+    this.cacheByQuery.clear();
+    for (const key of Object.keys(this.stats)) this.stats[key] = 0;
+    this.telemetry.resetStatistics();
+    for (const role of ['control', 'serial', 'audio']) {
+      const counters = this.session[role]?.counters;
+      if (counters) for (const key of Object.keys(counters)) counters[key] = 0;
+    }
+  }
+
   telemetrySnapshot() { return this.telemetry.snapshot(); }
 
   cacheSnapshot() {
@@ -132,8 +150,8 @@ class Broker extends EventEmitter {
 
   metricsSnapshot() {
     const snapshot = this.metrics.snapshot();
-    snapshot.eligible.queued = this.queue.filter((item) => !item.internal && item.cachePolicy).length;
-    snapshot.eligible.inFlight = this.pending && !this.pending.internal && this.pending.cachePolicy ? 1 : 0;
+    snapshot.eligible.queued = this.queue.filter((item) => !item.internal && !item.metricsFinished && item.cachePolicy).length;
+    snapshot.eligible.inFlight = this.pending && !this.pending.internal && !this.pending.metricsFinished && this.pending.cachePolicy ? 1 : 0;
     snapshot.transport = Object.fromEntries(['control', 'serial', 'audio'].map((role) => [role,
       Object.fromEntries(['malformed', 'stale', 'duplicates', 'lost', 'replayed'].map((key) => [key, this.session[role]?.counters?.[key] || 0]))]));
     return snapshot;
@@ -145,7 +163,8 @@ class Broker extends EventEmitter {
     return policy?.ttlMs > 0 ? policy : null;
   }
 
-  countCache(policy, kind) {
+  countCache(policy, kind, item) {
+    if (item?.suppressCacheStatistics) return;
     ++this.cacheStats[kind];
     if (!this.cacheByQuery.has(policy.key)) this.cacheByQuery.set(policy.key, { requests: 0, hits: 0, coalesced: 0, misses: 0 });
     ++this.cacheByQuery.get(policy.key)[kind];
@@ -169,18 +188,18 @@ class Broker extends EventEmitter {
 
   cachedReply(item) {
     if (!item.cachePolicy) return null;
-    if (item.cacheEpoch !== this.cacheEpoch) { this.metrics.reason('misses', 'admission_epoch', item.cachePolicy); return null; }
+    if (item.cacheEpoch !== this.cacheEpoch) { this.metrics.reason('misses', 'admission_epoch', item.cachePolicy, item); return null; }
     const entry = this.readCache.get(item.cachePolicy.key);
-    if (!entry) { this.metrics.reason('misses', 'absent', item.cachePolicy); return null; }
+    if (!entry) { this.metrics.reason('misses', 'absent', item.cachePolicy, item); return null; }
     const now = this.options.now();
     const reason = entry.epoch !== this.cacheEpoch ? 'entry_epoch' : entry.generation !== this.generation ? 'generation' : now >= entry.expiresAt ? 'expired' : null;
     if (reason) {
-      this.metrics.reason('misses', reason, item.cachePolicy);
+      this.metrics.reason('misses', reason, item.cachePolicy, item);
       this.readCache.delete(item.cachePolicy.key); return null;
     }
     this.metrics.hit(item, entry, now - entry.filledAt);
-    this.countCache(item.cachePolicy, 'hits');
-    if (item.serial <= entry.filledThroughSerial) this.countCache(item.cachePolicy, 'coalesced');
+    this.countCache(item.cachePolicy, 'hits', item);
+    if (item.serial <= entry.filledThroughSerial) this.countCache(item.cachePolicy, 'coalesced', item);
     return Buffer.from(entry.reply);
   }
 
@@ -189,19 +208,19 @@ class Broker extends EventEmitter {
     if (!policy) {
       const known = policyFor(item.bytes);
       this.metrics.reason('storeSkips', !this.options.cacheEnabled ? 'disabled' : known
-        ? this.options.cacheQueryTtls[known.key] === 0 ? 'query_disabled' : 'family_disabled' : 'unknown_query', known);
+        ? this.options.cacheQueryTtls[known.key] === 0 ? 'query_disabled' : 'family_disabled' : 'unknown_query', known, item);
       return;
     }
     if (!this.ready || this.synchronizing || this.releasing || this.stopRequested) {
-      this.metrics.reason('storeSkips', 'unstable', policy); return;
+      this.metrics.reason('storeSkips', 'unstable', policy, item); return;
     }
     if (item.cacheEpoch !== this.cacheEpoch) {
-      this.metrics.reason('storeSkips', 'admission_epoch', policy);
+      this.metrics.reason('storeSkips', 'admission_epoch', policy, item);
       if (item.coherenceAtDispatch === this.coherenceEpoch && validReply(item.bytes, bytes)) {
         for (const queued of this.queue) {
           if (!queued.policy.read) break;
           if (!queued.internal && queued.cachePolicy?.key === policy.key && queued.cacheEpoch === item.cacheEpoch
-            && !queued.suppressedSharingCounted && queued.client.active !== false
+            && !queued.suppressCacheStatistics && !queued.suppressedSharingCounted && queued.client.active !== false
             && queued.mediaGeneration === queued.client.mediaGeneration) {
             queued.suppressedSharingCounted = true; this.metrics.suppressedQueuedReads++;
           }
@@ -210,7 +229,7 @@ class Broker extends EventEmitter {
       return;
     }
     if (!validReply(item.bytes, bytes)) {
-      this.metrics.reason('storeSkips', 'invalid_reply', policy);
+      this.metrics.reason('storeSkips', 'invalid_reply', policy, item);
       this.readCache.delete(policy.key); return;
     }
     this.readCache.delete(policy.key);
@@ -411,8 +430,8 @@ class Broker extends EventEmitter {
         const telemetryKey = this.telemetry.eligible(item.bytes);
         const sample = telemetryKey ? this.telemetry.lookup(item) : null;
         if (sample) {
-          this.metrics.hit(item, sample, sample.ageMs); this.countCache(item.cachePolicy, 'hits');
-          if (item.serial <= sample.filledThroughSerial) this.countCache(item.cachePolicy, 'coalesced');
+          this.metrics.hit(item, sample, sample.ageMs); this.countCache(item.cachePolicy, 'hits', item);
+          if (item.serial <= sample.filledThroughSerial) this.countCache(item.cachePolicy, 'coalesced', item);
           const delivered = this.sendReadReply(item, sample.reply);
           this.metrics.finish(item, delivered ? 'completed' : 'cancelled', item.client.active === false ? 'client_disconnect' : 'media_generation');
           continue;
@@ -426,7 +445,7 @@ class Broker extends EventEmitter {
       }
       if (!item.internal) this.telemetry.prepareFallback(item);
       if (!item.policy.read) this.clearReadEntries('mutation_dispatch');
-      if (!item.internal && item.cachePolicy) this.countCache(item.cachePolicy, 'misses');
+      if (!item.internal && item.cachePolicy) this.countCache(item.cachePolicy, 'misses', item);
       if (!item.internal && item.policy.tx) this.advanceTxIncarnation();
       if (!item.internal && item.policy.tx && !this.owner) {
         this.owner = item.client;

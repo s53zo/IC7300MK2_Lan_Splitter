@@ -50,6 +50,20 @@ live under `tls/`, with private permissions. Normal restarts reuse the certifica
 startup renews an expiring local certificate, which may require browser approval
 again. Bootstrap tokens and web session cookies never enter diagnostics.
 
+## Reset statistics
+
+Open **Cache → Reset statistics** and confirm to start a new measurement window.
+This clears request/cache/telemetry counters, transport error counters, timing
+summaries and graphs. Settings, connections, TX ownership, cached values and
+sampling schedules stay active. Live gauges such as client count, queue depth,
+ping, sample age and service uptime remain real measurements. New traffic starts
+incrementing counters immediately. Diagnostic events remain available.
+
+Requests already admitted before reset finish normally without contributing to
+new logical request totals. Physical reads dispatched after reset still count;
+received telemetry samples and errors are counted when they occur. Reconnecting
+does not restore counters from before the reset.
+
 ## Service setup
 
 Use [the systemd example](services/icom-lan-splitter-web.service), adapting the

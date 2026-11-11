@@ -219,3 +219,29 @@ test('actual RX/TX display stays distinct from quiet or pending TX ownership con
     service.broker.pending = null; assert.equal(c.getState().dashboard.txControl, 'Available');
     service.session.connected = false; assert.equal(c.getState().dashboard.rxTx, 'Unavailable');
 });
+
+test('statistics reset preserves live connections, TX and cache warmth and clears reconnect totals', async (t) => {
+    let clock = 1000;
+    const { controller: c, services } = await setup(t, { now: () => clock });
+    await c.saveSettings(valid()); await c.start();
+    const service = services[0];
+    service.broker.resetStatistics = () => { service.cache.requests = 0; service.cache.hits = 0; service.metrics.physicalTotal = 0; };
+    service.cache.requests = 40; service.cache.hits = 30; service.cache.entries = 2;
+    c.totals.cache = { ...service.cache, requests: 100, hits: 80 };
+    service.session.control = { counters: { lost: 7 }, pendingPings: new Map([[1, 2]]) };
+    service.server.stats.resourceRejects = 9;
+    service.broker.observedTx = true;
+    c.latency.pingMs = 2; c.latency.responseMs = 5; c.rates.radioPerSecond = 20;
+    clock = 2000; const state = c.resetStatistics();
+    assert.equal(state.status.cache.requests, 0); assert.equal(state.status.cache.hits, 0);
+    assert.equal(state.status.cache.entries, 2); assert.equal(state.txActive, true);
+    assert.equal(state.history.length, 0); assert.equal(state.rates.radioPerSecond, 0);
+    assert.equal(state.latency.responseMs, null); assert.equal(state.latency.pingMs, 2);
+    assert.equal(state.statisticsStartedAt, 2000); assert.equal(state.uptimeMs, 1000);
+    assert.equal(service.session.control.counters.lost, 0); assert.equal(service.session.control.pendingPings.get(1), 2);
+    assert.equal(service.server.stats.resourceRejects, 0); assert.equal(service.starts, 1); assert.equal(service.closes, 0);
+    service.broker.observedTx = false; service.cache.requests = 3;
+    await c.reconnect(); assert.equal(c.getState().status.cache.requests, 3);
+    services[1].broker.resetStatistics = () => {};
+    c.resetStatistics(); assert.equal(c.getState().status.cache.requests, 0);
+});

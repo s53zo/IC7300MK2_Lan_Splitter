@@ -218,3 +218,16 @@ test('web management shares one actual synthetic radio service with native clien
     assert.equal((await api(server, auth, 'state')).status, 200, 'radio stop leaves management reachable');
     assert.equal((await api(server, auth, 'export')).text.includes('testpass'), false);
 });
+
+test('statistics reset requires authentication and CSRF and does not stop the connection', async (t) => {
+    const { server, controller } = await setup(t); let resets = 0;
+    controller.resetStatistics = () => { resets++; return controller.getState(); };
+    assert.equal((await api(server, {}, 'reset-statistics')).status, 403);
+    const auth = await login(server);
+    assert.equal((await api(server, { cookie: auth.cookie }, 'reset-statistics')).status, 403);
+    assert.equal((await api(server, auth, 'reset-statistics', { unexpected: true })).status, 400);
+    assert.equal(resets, 0);
+    const result = await api(server, auth, 'reset-statistics');
+    assert.equal(result.status, 200); assert.equal(resets, 1);
+    assert.equal(result.json.value.running, true); assert.equal(controller.closed, 0);
+});

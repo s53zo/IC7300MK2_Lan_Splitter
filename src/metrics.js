@@ -30,6 +30,7 @@ class BrokerMetrics {
     constructor(now) {
         this.now = now;
         this.startedAt = now();
+        this.window = {};
         this.physical = zeroes(PHYSICAL);
         this.physicalSendErrors = 0;
         this.radioTimeouts = 0;
@@ -45,7 +46,8 @@ class BrokerMetrics {
         this.byQuery = new Map();
         this.histograms = Object.fromEntries(['queueWait', 'radioRtt', 'endToEnd', 'successfulReply', 'cancelledWait', 'cacheAge'].map((name) => [name, new Histogram()]));
     }
-    reason(scope, reason, policy) {
+    reason(scope, reason, policy, item) {
+        if (item?.suppressCacheStatistics) return;
         const counters = this.reasons[scope];
         const key = Object.hasOwn(counters, reason) ? reason : 'other';
         counters[key]++;
@@ -64,17 +66,20 @@ class BrokerMetrics {
     }
     start(item, purpose) {
         item.dispatchedAt = this.now();
+        item.metricsWindow = this.window;
         const key = Object.hasOwn(this.physical, purpose) ? purpose : 'internal';
         this.physical[key]++;
         if (item.policy?.oneWay) this.oneWayDispatches++;
-        if (!item.internal) this.histograms.queueWait.add(item.dispatchedAt - item.admittedAt);
+        if (!item.internal && !item.metricsFinished) this.histograms.queueWait.add(item.dispatchedAt - item.admittedAt);
     }
     reply(item) {
+        if (item.metricsWindow !== this.window) return;
         this.responses++;
         if (item.dispatchedAt !== undefined) this.histograms.radioRtt.add(this.now() - item.dispatchedAt);
     }
-    local(item) { this.histograms.queueWait.add(this.now() - item.admittedAt); }
+    local(item) { if (item.metricsFinished) return; this.histograms.queueWait.add(this.now() - item.admittedAt); }
     hit(item, entry, age) {
+        if (item.metricsFinished) return;
         this.histograms.queueWait.add(this.now() - item.admittedAt);
         this.histograms.cacheAge.add(age);
         const queued = item.serial <= entry.filledThroughSerial;

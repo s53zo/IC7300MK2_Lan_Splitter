@@ -15,6 +15,10 @@ class SharedTelemetry {
     this.stats = new Map(DEFINITIONS.map(({ key }) => [key, { rfPolls: 0, localAnswers: 0, zeroReplies: 0, fallbacks: 0, samples: 0, backpressureSkips: 0 }]));
     this.invalidations = 0;
   }
+  resetStatistics() {
+    for (const counters of this.stats.values()) for (const key of Object.keys(counters)) counters[key] = 0;
+    this.invalidations = 0;
+  }
   get active() { return this.broker.options.telemetryEnabled && this.broker.options.cacheEnabled; }
   healthy() {
     const b = this.broker;
@@ -108,7 +112,9 @@ class SharedTelemetry {
       }
     }
     if (!sample) { sample = this.entry(key, item.cacheEpoch); if (!sample) return null; reply = Buffer.from(sample.reply); }
-    const counters = this.stats.get(key); counters.localAnswers++; if (zero) counters.zeroReplies++;
+    if (!item.suppressCacheStatistics) {
+      const counters = this.stats.get(key); counters.localAnswers++; if (zero) counters.zeroReplies++;
+    }
     return { ...sample, reply, ageMs: this.broker.options.now() - sample.filledAt, zero };
   }
   tick() {

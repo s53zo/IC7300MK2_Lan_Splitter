@@ -1,7 +1,7 @@
 'use strict';
 const path = require('node:path');
 const { fileURLToPath } = require('node:url');
-const ACTIONS = new Set(['state', 'settings', 'fields', 'save', 'start', 'stop', 'reconnect', 'close', 'defaults', 'export', 'password-file']);
+const ACTIONS = new Set(['state', 'settings', 'fields', 'save', 'start', 'stop', 'reconnect', 'close', 'defaults', 'export', 'password-file', 'reset-statistics']);
 function sameLocalFile(frameUrl, indexFile, platform = process.platform) {
     try {
         const url = new URL(frameUrl);
@@ -27,7 +27,7 @@ function diagnosticReport(state) {
     // bounded broker snapshots; human events are redacted by AppController.
     return { format: 1, createdAt: new Date().toISOString(), running: Boolean(state.running),
         connecting: Boolean(state.connecting), txActive: Boolean(state.txActive),
-        status: state.status, rates: state.rates, latency: state.latency,
+        statisticsStartedAt: state.statisticsStartedAt, status: state.status, rates: state.rates, latency: state.latency,
         history: state.history, events: state.events };
 }
 module.exports = { validateRequest, diagnosticReport, sameLocalFile };

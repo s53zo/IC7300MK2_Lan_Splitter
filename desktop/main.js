@@ -94,6 +94,7 @@ async function main() {
         try {
             validateRequest(event, window, indexFile, action, payload);
             switch (action) {
+            case 'reset-statistics': return { ok: true, value: controller.resetStatistics() };
             case 'state': return { ok: true, value: controller.getState() };
             case 'settings': return { ok: true, value: { ...controller.getSettings(), configDirectory: directory, interfaces: controller.getNetworkInterfaces() } };
             case 'fields': return { ok: true, value: settings.FIELDS };

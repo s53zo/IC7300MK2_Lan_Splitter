@@ -122,6 +122,18 @@ async function run() {
             await until(() => js("document.getElementById('client-count').textContent==='2' && document.getElementById('ping-ms').textContent.endsWith(' ms') && document.getElementById('response-ms').textContent.endsWith(' ms')"), 'polled client count and measured latency');
             assert.deepEqual(radio.connections, { control: 1, civ: 1, audio: 1 });
             for (const screen of ['dashboard', 'clients', 'cache', 'settings', 'diagnostics']) { await nav(screen); await capture(`03-${screen}`); }
+            await nav('cache');
+            const windowBefore = controller.statisticsStartedAt;
+            await click('reset-statistics'); await until(() => js("document.getElementById('confirm-dialog').open"), 'reset confirmation');
+            await capture('03a-reset-confirmation'); await click('confirm-cancel');
+            assert.equal(controller.statisticsStartedAt, windowBefore); assert.ok(controller.getState().status.cache.requests > 0);
+            const sessionBefore = controller.service.session;
+            await click('reset-statistics'); await until(() => js("document.getElementById('confirm-dialog').open"), 'reset confirmation retry'); await click('confirm-accept');
+            await until(() => controller.statisticsStartedAt !== windowBefore, 'statistics reset');
+            assert.equal(controller.getState().status.cache.requests, 0); assert.equal(controller.history.length, 0);
+            assert.equal(controller.service.session, sessionBefore); assert.equal(controller.getState().clients.length, 2);
+            assert.deepEqual(radio.connections, { control: 1, civ: 1, audio: 1 });
+            await capture('03b-reset-statistics');
             await nav('settings'); await js("document.getElementById('per-command-settings').open=true; document.getElementById('ICOM_CACHE_QUERY_1502_MS').value='200'"); await click('save-settings');
             await until(() => controller.getSettings().values.ICOM_CACHE_QUERY_1502_MS === '200', 'saved per-query setting');
             const policy = () => controller.getState().status.cache.querySettings.find((entry) => entry.key === '1502');

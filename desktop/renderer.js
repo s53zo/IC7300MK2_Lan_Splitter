@@ -90,6 +90,13 @@ byId('apply-settings').addEventListener('click', reconnect);
 byId('configure-query-cache').addEventListener('click', () => {
     view('settings'); byId('per-command-settings').open = true; byId('per-command-settings').scrollIntoView({ block: 'start' });
 });
+byId('reset-statistics').addEventListener('click', async () => {
+    if (!await confirmAction({ title: 'Reset statistics?', description: 'Clear counters, timing summaries and graphs? Connections, settings, cached values and polling stay unchanged.', accept: 'Reset statistics' })) return;
+    const button = byId('reset-statistics'); button.disabled = true;
+    try { render(await request('reset-statistics')); message('Statistics reset.'); }
+    catch (error) { message(error.message, true); }
+    finally { button.disabled = false; }
+});
 byId('export-report').addEventListener('click', async () => { try { if (await request('export')) message('Diagnostic report saved.'); } catch (error) { message(error.message, true); } });
 function renderControls() {
     const active = state.running || state.connecting;
@@ -103,6 +110,7 @@ function renderControls() {
 }
 function render(next) {
     if (!next) return;
+    text('statistics-window', next.statisticsStartedAt ? `Statistics since ${new Date(next.statisticsStartedAt).toLocaleString()}` : 'Statistics since application start');
     state = next;
     const status = state.status || {}, broker = status.broker || {}, cache = status.cache || {}, metrics = status.metrics || {};
     const radio = status.radio || {}, counts = status.nativeClients || {}, rates = state.rates || {}, timing = state.latency || {};
@@ -117,7 +125,7 @@ function render(next) {
     text('client-count', count(counts.authenticated)); text('nav-clients', count(counts.authenticated));
     text('client-detail', `${count(counts.audioReady)} receiving audio · ${count(counts.civReady)} ready for commands`);
     text('cache-percent', number(cache.requests) ? `${decimal(number(cache.hits) / number(cache.requests) * 100)}%` : '—');
-    text('cache-detail', `${count(cache.hits)} client requests answered locally this session`);
+    text('cache-detail', `${count(cache.hits)} client requests answered locally since reset`);
     text('radio-rate', decimal(rates.radioPerSecond));
     text('uptime', duration(state.uptimeMs));
     text('ping-ms', timing.pingStale ? '—' : milliseconds(timing.pingMs));
