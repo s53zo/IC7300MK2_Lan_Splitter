@@ -1,0 +1,409 @@
+{
+  "source": "src/read-cache.js queryCatalog()",
+  "queries": 67,
+  "verification": "Every allowlisted shape/source path reviewed; existing canonical and invalid-shape tests inspected. No exhaustive primary-manual validation for every getter; AUD-08 records one confirmed enum mismatch.",
+  "items": [
+    {
+      "key": "03",
+      "label": "Selected frequency",
+      "category": "tuning",
+      "defaultTtlMs": 50
+    },
+    {
+      "key": "04",
+      "label": "Mode and filter",
+      "category": "tuning",
+      "defaultTtlMs": 50
+    },
+    {
+      "key": "0f",
+      "label": "Split state",
+      "category": "tuning",
+      "defaultTtlMs": 50
+    },
+    {
+      "key": "10",
+      "label": "Tuning step",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "11",
+      "label": "Attenuator",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "12",
+      "label": "RX antenna",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1401",
+      "label": "CI-V query 1401",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1402",
+      "label": "RF gain",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1403",
+      "label": "CI-V query 1403",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1406",
+      "label": "CI-V query 1406",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1407",
+      "label": "CI-V query 1407",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1408",
+      "label": "CI-V query 1408",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1409",
+      "label": "CI-V query 1409",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "140a",
+      "label": "RF power setting",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "140b",
+      "label": "CI-V query 140B",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "140c",
+      "label": "CI-V query 140C",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "140e",
+      "label": "CI-V query 140E",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "140f",
+      "label": "CI-V query 140F",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1412",
+      "label": "CI-V query 1412",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1415",
+      "label": "CI-V query 1415",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1416",
+      "label": "CI-V query 1416",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1417",
+      "label": "CI-V query 1417",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1502",
+      "label": "S-meter",
+      "category": "meters",
+      "defaultTtlMs": 100
+    },
+    {
+      "key": "1507",
+      "label": "ADC overflow",
+      "category": "meters",
+      "defaultTtlMs": 100
+    },
+    {
+      "key": "1511",
+      "label": "Power meter",
+      "category": "meters",
+      "defaultTtlMs": 100
+    },
+    {
+      "key": "1512",
+      "label": "SWR meter",
+      "category": "meters",
+      "defaultTtlMs": 100
+    },
+    {
+      "key": "1513",
+      "label": "ALC meter",
+      "category": "meters",
+      "defaultTtlMs": 100
+    },
+    {
+      "key": "1514",
+      "label": "CI-V query 1514",
+      "category": "meters",
+      "defaultTtlMs": 100
+    },
+    {
+      "key": "1515",
+      "label": "CI-V query 1515",
+      "category": "meters",
+      "defaultTtlMs": 100
+    },
+    {
+      "key": "1516",
+      "label": "CI-V query 1516",
+      "category": "meters",
+      "defaultTtlMs": 100
+    },
+    {
+      "key": "1602",
+      "label": "Preamp selection",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1612",
+      "label": "CI-V query 1612",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1622",
+      "label": "CI-V query 1622",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1640",
+      "label": "Noise reduction on/off",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1641",
+      "label": "Auto notch on/off",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1642",
+      "label": "CI-V query 1642",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1643",
+      "label": "CI-V query 1643",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1644",
+      "label": "CI-V query 1644",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1645",
+      "label": "CI-V query 1645",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1648",
+      "label": "CI-V query 1648",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "164f",
+      "label": "CI-V query 164F",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1650",
+      "label": "CI-V query 1650",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1656",
+      "label": "CI-V query 1656",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1657",
+      "label": "CI-V query 1657",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1658",
+      "label": "CI-V query 1658",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1665",
+      "label": "CI-V query 1665",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1a03",
+      "label": "CI-V query 1A03",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1a04",
+      "label": "CI-V query 1A04",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1a050079",
+      "label": "CI-V query 1A050079",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1a050080",
+      "label": "CI-V query 1A050080",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1a050081",
+      "label": "CI-V query 1A050081",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1a050082",
+      "label": "CI-V query 1A050082",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1a050083",
+      "label": "CI-V query 1A050083",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1a050084",
+      "label": "CI-V query 1A050084",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1a050085",
+      "label": "CI-V query 1A050085",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "1c00",
+      "label": "RX/TX state",
+      "category": "state",
+      "defaultTtlMs": 100
+    },
+    {
+      "key": "1c01",
+      "label": "Tuner state",
+      "category": "state",
+      "defaultTtlMs": 100
+    },
+    {
+      "key": "2500",
+      "label": "CI-V query 2500",
+      "category": "tuning",
+      "defaultTtlMs": 50
+    },
+    {
+      "key": "2501",
+      "label": "CI-V query 2501",
+      "category": "tuning",
+      "defaultTtlMs": 50
+    },
+    {
+      "key": "2600",
+      "label": "CI-V query 2600",
+      "category": "tuning",
+      "defaultTtlMs": 50
+    },
+    {
+      "key": "2601",
+      "label": "CI-V query 2601",
+      "category": "tuning",
+      "defaultTtlMs": 50
+    },
+    {
+      "key": "271400",
+      "label": "Scope mode",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "271500",
+      "label": "Scope span",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "271600",
+      "label": "Scope fixed edge",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "271700",
+      "label": "Scope hold",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "271900",
+      "label": "Scope reference level",
+      "category": "settings",
+      "defaultTtlMs": 250
+    },
+    {
+      "key": "271a00",
+      "label": "Scope sweep speed",
+      "category": "settings",
+      "defaultTtlMs": 250
+    }
+  ]
+}

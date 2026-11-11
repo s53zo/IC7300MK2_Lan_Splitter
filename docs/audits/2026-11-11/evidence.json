@@ -1,0 +1,202 @@
+{
+  "date": "2026-11-11",
+  "source_commit": "ec801be1af4f0e05e5b156848541a788d7a704b0",
+  "github_main_commit": "ec801be1af4f0e05e5b156848541a788d7a704b0",
+  "initial_tracked_worktree": "clean",
+  "local_platform": "darwin/x64",
+  "local_node": "26.13.0",
+  "published_release": {
+    "tagName": "v0.8.1",
+    "targetCommitish": "9d9e6661376601ce0b9a11aa9d9f1071ced4ef95",
+    "publishedAt": "2026-11-08T19:48:51Z",
+    "isDraft": false,
+    "isPrerelease": false,
+    "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/tag/v0.8.1"
+  },
+  "release_assets": [
+    {
+      "name": "icom-lan-splitter-0.8.1-darwin-arm64.dmg",
+      "size": 121604873,
+      "digest": "sha256:5cdf46d3ccf643a0a8ea238fa21fca67219f4bd19f72e14764c7c30a620d64bd",
+      "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8.1/icom-lan-splitter-0.8.1-darwin-arm64.dmg"
+    },
+    {
+      "name": "icom-lan-splitter-0.8.1-darwin-arm64.tar.gz",
+      "size": 46004076,
+      "digest": "sha256:042a8317319044d80bfc439129e2fedb1ee31526277d24996a15d7d98ca0faa8",
+      "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8.1/icom-lan-splitter-0.8.1-darwin-arm64.tar.gz"
+    },
+    {
+      "name": "icom-lan-splitter-0.8.1-darwin-x64.dmg",
+      "size": 127339848,
+      "digest": "sha256:26aefc6e2931308599119bf949ad1e5e384bec0c2fe9c419c83d1f7481028267",
+      "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8.1/icom-lan-splitter-0.8.1-darwin-x64.dmg"
+    },
+    {
+      "name": "icom-lan-splitter-0.8.1-darwin-x64.tar.gz",
+      "size": 47241690,
+      "digest": "sha256:ee65bd5801ca16a2c0f706d2719a166a2710cbd8dfdf7cdc322af9835bf7c914",
+      "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8.1/icom-lan-splitter-0.8.1-darwin-x64.tar.gz"
+    },
+    {
+      "name": "icom-lan-splitter-0.8.1-linux-arm64.tar.gz",
+      "size": 48554398,
+      "digest": "sha256:034033274262646b4be9d76b2183bf6788e99ee69cf0a39328002dd5b65a670f",
+      "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8.1/icom-lan-splitter-0.8.1-linux-arm64.tar.gz"
+    },
+    {
+      "name": "icom-lan-splitter-0.8.1-linux-x64.tar.gz",
+      "size": 48462785,
+      "digest": "sha256:e63b29ce909a01d3e1c4d337781a2a17fa35ad5bc58eecb0ef9dc714a6e6f17b",
+      "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8.1/icom-lan-splitter-0.8.1-linux-x64.tar.gz"
+    },
+    {
+      "name": "icom-lan-splitter-0.8.1-source.tar.gz",
+      "size": 1357161,
+      "digest": "sha256:338d87cea5284ed294db2a79eca7236c89b44ee394dd5725fc9282e036cf2bab",
+      "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8.1/icom-lan-splitter-0.8.1-source.tar.gz"
+    },
+    {
+      "name": "icom-lan-splitter-0.8.1-win32-x64-Setup.exe",
+      "size": 121578757,
+      "digest": "sha256:cfd1084d97d68b2637b8b0bec4876c246ae8e872fcf53215b96855a151f48aa5",
+      "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8.1/icom-lan-splitter-0.8.1-win32-x64-Setup.exe"
+    },
+    {
+      "name": "icom-lan-splitter-0.8.1-win32-x64.zip",
+      "size": 39896296,
+      "digest": "sha256:031be730f0259d37be3ed105394140f5dedf2abe604796b2ce3792d09e946dc2",
+      "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8.1/icom-lan-splitter-0.8.1-win32-x64.zip"
+    },
+    {
+      "name": "SHA256SUMS",
+      "size": 964,
+      "digest": "sha256:84fb5ec567dcc7a50a7c01309c35fbfc21a539a2c8089ae6aa5cf2129f1f0622",
+      "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/download/v0.8.1/SHA256SUMS"
+    }
+  ],
+  "current_source_ci": {
+    "commit": "ec801be1af4f0e05e5b156848541a788d7a704b0",
+    "conclusion": "success",
+    "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/actions/runs/43094197886",
+    "jobs": [
+      {
+        "name": "test (macos-latest, 22)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (windows-latest, 24)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (macos-latest, 24)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (windows-latest, 22)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (ubuntu-latest, 24)",
+        "conclusion": "success"
+      },
+      {
+        "name": "test (ubuntu-latest, 22)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "published_release_ci": {
+    "commit": "9d9e6661376601ce0b9a11aa9d9f1071ced4ef95",
+    "conclusion": "success",
+    "url": "https://github.com/s53zo/IC7300MK2_Lan_Splitter/actions/runs/42516452856",
+    "jobs": [
+      {
+        "name": "metadata",
+        "conclusion": "success"
+      },
+      {
+        "name": "desktop (macos-15, darwin, arm64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build (macos-15-intel, darwin, x64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "desktop (macos-15-intel, darwin, x64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build (ubuntu-24.04, linux, x64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build (macos-15, darwin, arm64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "desktop (windows-2025, win32, x64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build (ubuntu-24.04-arm, linux, arm64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build (windows-2025, win32, x64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "draft",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "deployed_version": {
+    "status": "unverified during this audit",
+    "reason": "Two read-only SSH attempts timed out during banner exchange. No service operations were attempted.",
+    "last_pre_audit_record_only": "ec801be; not accepted as current deployment evidence"
+  },
+  "verification": {
+    "tests": {
+      "passed": 273,
+      "failed": 0
+    },
+    "lint": "pass",
+    "syntax_checks": "pass",
+    "npm_pack_dry_run": "pass using isolated npm cache; default cache EACCES",
+    "npm_audit": {
+      "result": "pass",
+      "advisories": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "boundary": "Registry advisories for current lockfile only; not proof of no vulnerabilities"
+    },
+    "browser_https_smoke": "pass; ordinary sandboxed browser with synthetic loopback radio; 90 rendered settings; two clients",
+    "fresh_mac_intel_standalone_build": "pass with official Node26.13.0 archive checked against official SHASUMS256; Homebrew Node SEA disabled",
+    "standalone_cli_smoke": "pass; two clients, exact PCM/scope, one upstream, no physical radio",
+    "packaged_tui_pty_smoke": "pass on macOS; explicit --tui, not Linux default launch",
+    "packaged_tui_native_smoke": "pass; synthetic TX, confirmation/cancel/release, exact media, no RF",
+    "fresh_mac_intel_dmg_build": "pass; sourceec801be; ad-hoc signing only; no publishing",
+    "installed_desktop_smoke": "not passed; GUI boots but fixture save fails due inaccessible OS Keychain (-25308 errSecInteractionNotAllowed); no insecure fallback used",
+    "active_telemetry_concurrent_media": {
+      "clients": 8,
+      "queries": 952,
+      "replies": 952,
+      "telemetryActive": true,
+      "telemetryPhysicalPolls": 39,
+      "maxClientAudioArrivalGapMs": 21.8,
+      "all_emitted_media_delivered": true,
+      "brokerTimeouts": 0
+    }
+  },
+  "production_changes": false,
+  "implementation_changes": false,
+  "commits_or_pushes": false
+}

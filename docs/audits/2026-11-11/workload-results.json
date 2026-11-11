@@ -1,0 +1,79 @@
+{
+  "scope": "Fresh coordinator runs, macOS Intel loopback fixtures; no RF or production traffic. No general capacity/latency guarantee.",
+  "active_sampler_and_uncached_controls": {
+    "kind": "synthetic-loopback-concurrent-media",
+    "node": "v26.13.0",
+    "platform": "darwin/x64",
+    "clients": 8,
+    "elapsedMs": 3206,
+    "queries": 952,
+    "replies": 952,
+    "sentAudio": 296,
+    "receivedAudio": [
+      296,
+      296,
+      296,
+      296,
+      296,
+      296,
+      296,
+      296
+    ],
+    "sentScope": 29,
+    "receivedScope": [
+      29,
+      29,
+      29,
+      29,
+      29,
+      29,
+      29,
+      29
+    ],
+    "maxClientAudioArrivalGapMs": 21.8,
+    "brokerTimeouts": 0,
+    "telemetryActive": true,
+    "telemetryPhysicalPolls": 39,
+    "upstreamAssociations": 1,
+    "transport": {
+      "control": {
+        "malformed": 0,
+        "stale": 0,
+        "duplicates": 0,
+        "lost": 0,
+        "replayed": 0
+      },
+      "serial": {
+        "malformed": 0,
+        "stale": 0,
+        "duplicates": 0,
+        "lost": 0,
+        "replayed": 0
+      },
+      "audio": {
+        "malformed": 0,
+        "stale": 0,
+        "duplicates": 0,
+        "lost": 0,
+        "replayed": 0
+      }
+    }
+  },
+  "elevated_budget_128_client_fanout": {
+    "kind": "synthetic-loopback",
+    "node": "v26.13.0",
+    "platform": "darwin/x64",
+    "clients": 128,
+    "durationMs": 2201,
+    "upstreamSessions": 1,
+    "sentAudio": 196,
+    "receivedAudio": 25088,
+    "expectedAudio": 25088,
+    "sentScope": 19,
+    "receivedScope": 2432,
+    "expectedScope": 2432,
+    "audioPayloadMbps": 87.54,
+    "cpuMs": 1267,
+    "rssMiB": 106.8
+  }
+}

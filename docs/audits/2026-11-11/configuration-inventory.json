@@ -1,0 +1,817 @@
+{
+  "source": "src/app/settings.js FIELDS",
+  "fields": 90,
+  "verification": "All controls rendered in HTTPS browser smoke; shared validation and persistence tests cover representative invalid/range/TTL/credential cases; exhaustive boundary combinations for every field not claimed.",
+  "items": [
+    {
+      "key": "ICOM_RADIO_HOST",
+      "label": "Radio address",
+      "type": "text",
+      "default": "",
+      "min": null,
+      "max": null,
+      "group": "Radio"
+    },
+    {
+      "key": "ICOM_USERNAME",
+      "label": "Radio username",
+      "type": "text",
+      "default": "",
+      "min": null,
+      "max": null,
+      "group": "Radio"
+    },
+    {
+      "key": "ICOM_PASSWORD",
+      "label": "Radio password",
+      "type": "password",
+      "default": "",
+      "min": null,
+      "max": null,
+      "group": "Radio"
+    },
+    {
+      "key": "ICOM_PASSWORD_FILE",
+      "label": "Import password file",
+      "type": "file",
+      "default": "",
+      "min": null,
+      "max": null,
+      "group": "Radio"
+    },
+    {
+      "key": "ICOM_BIND_ADDRESS",
+      "label": "Listen address",
+      "type": "text",
+      "default": "0.0.0.0",
+      "min": null,
+      "max": null,
+      "group": "Network"
+    },
+    {
+      "key": "ICOM_LISTEN_CONTROL_PORT",
+      "label": "Client control port",
+      "type": "number",
+      "default": "50001",
+      "min": 1,
+      "max": 65535,
+      "group": "Network"
+    },
+    {
+      "key": "ICOM_LISTEN_CIV_PORT",
+      "label": "Client CI-V port",
+      "type": "number",
+      "default": "50002",
+      "min": 1,
+      "max": 65535,
+      "group": "Network"
+    },
+    {
+      "key": "ICOM_LISTEN_AUDIO_PORT",
+      "label": "Client audio port",
+      "type": "number",
+      "default": "50003",
+      "min": 1,
+      "max": 65535,
+      "group": "Network"
+    },
+    {
+      "key": "ICOM_RADIO_CONTROL_PORT",
+      "label": "Radio control port",
+      "type": "number",
+      "default": "50001",
+      "min": 1,
+      "max": 65535,
+      "group": "Network"
+    },
+    {
+      "key": "ICOM_RADIO_CIV_PORT",
+      "label": "Radio CI-V port",
+      "type": "number",
+      "default": "50002",
+      "min": 1,
+      "max": 65535,
+      "group": "Network"
+    },
+    {
+      "key": "ICOM_RADIO_AUDIO_PORT",
+      "label": "Radio audio port",
+      "type": "number",
+      "default": "50003",
+      "min": 1,
+      "max": 65535,
+      "group": "Network"
+    },
+    {
+      "key": "ICOM_TELEMETRY_ENABLED",
+      "label": "Shared telemetry polling",
+      "type": "boolean",
+      "default": "0",
+      "min": null,
+      "max": null,
+      "group": "Cache"
+    },
+    {
+      "key": "ICOM_CACHE_ENABLED",
+      "label": "Enable request cache",
+      "type": "boolean",
+      "default": "1",
+      "min": null,
+      "max": null,
+      "group": "Cache"
+    },
+    {
+      "key": "ICOM_CACHE_METERS_MS",
+      "label": "Meter / ADC cache (ms)",
+      "type": "number",
+      "default": "100",
+      "min": 0,
+      "max": 1000,
+      "group": "Cache"
+    },
+    {
+      "key": "ICOM_CACHE_STATE_MS",
+      "label": "RX/TX / tuner cache (ms)",
+      "type": "number",
+      "default": "100",
+      "min": 0,
+      "max": 1000,
+      "group": "Cache"
+    },
+    {
+      "key": "ICOM_CACHE_SETTINGS_MS",
+      "label": "Settings cache (ms)",
+      "type": "number",
+      "default": "250",
+      "min": 0,
+      "max": 1000,
+      "group": "Cache"
+    },
+    {
+      "key": "ICOM_CACHE_TUNING_MS",
+      "label": "Frequency / mode cache (ms)",
+      "type": "number",
+      "default": "50",
+      "min": 0,
+      "max": 1000,
+      "group": "Cache"
+    },
+    {
+      "key": "ICOM_MEMORY_BUDGET_MB",
+      "label": "Client memory budget (MiB)",
+      "type": "number",
+      "default": "128",
+      "min": 8,
+      "max": 65536,
+      "group": "Advanced"
+    },
+    {
+      "key": "ICOM_PREAUTH_MEMORY_MB",
+      "label": "Pending login budget (MiB)",
+      "type": "number",
+      "default": "8",
+      "min": 1,
+      "max": 65536,
+      "group": "Advanced"
+    },
+    {
+      "key": "ICOM_PREAUTH_TIMEOUT_MS",
+      "label": "Login deadline (ms)",
+      "type": "number",
+      "default": "10000",
+      "min": 100,
+      "max": 300000,
+      "group": "Advanced"
+    },
+    {
+      "key": "ICOM_CLIENT_TIMEOUT_MS",
+      "label": "Client heartbeat timeout (ms)",
+      "type": "number",
+      "default": "15000",
+      "min": 100,
+      "max": 300000,
+      "group": "Advanced"
+    },
+    {
+      "key": "ICOM_RADIO_TIMEOUT_MS",
+      "label": "Radio heartbeat timeout (ms)",
+      "type": "number",
+      "default": "15000",
+      "min": 100,
+      "max": 300000,
+      "group": "Advanced"
+    },
+    {
+      "key": "ICOM_COMMAND_TIMEOUT_MS",
+      "label": "Command reply timeout (ms)",
+      "type": "number",
+      "default": "2000",
+      "min": 100,
+      "max": 30000,
+      "group": "Advanced"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_03_MS",
+      "label": "Selected frequency (03)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_04_MS",
+      "label": "Mode and filter (04)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_0F_MS",
+      "label": "Split state (0F)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_10_MS",
+      "label": "Tuning step (10)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_11_MS",
+      "label": "Attenuator (11)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_12_MS",
+      "label": "RX antenna (12)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1401_MS",
+      "label": "CI-V query 1401 (1401)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1402_MS",
+      "label": "RF gain (1402)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1403_MS",
+      "label": "CI-V query 1403 (1403)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1406_MS",
+      "label": "CI-V query 1406 (1406)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1407_MS",
+      "label": "CI-V query 1407 (1407)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1408_MS",
+      "label": "CI-V query 1408 (1408)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1409_MS",
+      "label": "CI-V query 1409 (1409)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_140A_MS",
+      "label": "RF power setting (140A)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_140B_MS",
+      "label": "CI-V query 140B (140B)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_140C_MS",
+      "label": "CI-V query 140C (140C)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_140E_MS",
+      "label": "CI-V query 140E (140E)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_140F_MS",
+      "label": "CI-V query 140F (140F)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1412_MS",
+      "label": "CI-V query 1412 (1412)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1415_MS",
+      "label": "CI-V query 1415 (1415)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1416_MS",
+      "label": "CI-V query 1416 (1416)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1417_MS",
+      "label": "CI-V query 1417 (1417)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1502_MS",
+      "label": "S-meter (1502)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1507_MS",
+      "label": "ADC overflow (1507)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1511_MS",
+      "label": "Power meter (1511)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1512_MS",
+      "label": "SWR meter (1512)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1513_MS",
+      "label": "ALC meter (1513)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1514_MS",
+      "label": "CI-V query 1514 (1514)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1515_MS",
+      "label": "CI-V query 1515 (1515)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1516_MS",
+      "label": "CI-V query 1516 (1516)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1602_MS",
+      "label": "Preamp selection (1602)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1612_MS",
+      "label": "CI-V query 1612 (1612)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1622_MS",
+      "label": "CI-V query 1622 (1622)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1640_MS",
+      "label": "Noise reduction on/off (1640)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1641_MS",
+      "label": "Auto notch on/off (1641)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1642_MS",
+      "label": "CI-V query 1642 (1642)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1643_MS",
+      "label": "CI-V query 1643 (1643)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1644_MS",
+      "label": "CI-V query 1644 (1644)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1645_MS",
+      "label": "CI-V query 1645 (1645)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1648_MS",
+      "label": "CI-V query 1648 (1648)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_164F_MS",
+      "label": "CI-V query 164F (164F)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1650_MS",
+      "label": "CI-V query 1650 (1650)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1656_MS",
+      "label": "CI-V query 1656 (1656)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1657_MS",
+      "label": "CI-V query 1657 (1657)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1658_MS",
+      "label": "CI-V query 1658 (1658)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1665_MS",
+      "label": "CI-V query 1665 (1665)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1A03_MS",
+      "label": "CI-V query 1A03 (1A03)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1A04_MS",
+      "label": "CI-V query 1A04 (1A04)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1A050079_MS",
+      "label": "CI-V query 1A050079 (1A050079)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1A050080_MS",
+      "label": "CI-V query 1A050080 (1A050080)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1A050081_MS",
+      "label": "CI-V query 1A050081 (1A050081)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1A050082_MS",
+      "label": "CI-V query 1A050082 (1A050082)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1A050083_MS",
+      "label": "CI-V query 1A050083 (1A050083)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1A050084_MS",
+      "label": "CI-V query 1A050084 (1A050084)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1A050085_MS",
+      "label": "CI-V query 1A050085 (1A050085)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1C00_MS",
+      "label": "RX/TX state (1C00)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_1C01_MS",
+      "label": "Tuner state (1C01)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_2500_MS",
+      "label": "CI-V query 2500 (2500)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_2501_MS",
+      "label": "CI-V query 2501 (2501)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_2600_MS",
+      "label": "CI-V query 2600 (2600)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_2601_MS",
+      "label": "CI-V query 2601 (2601)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_271400_MS",
+      "label": "Scope mode (271400)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_271500_MS",
+      "label": "Scope span (271500)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_271600_MS",
+      "label": "Scope fixed edge (271600)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_271700_MS",
+      "label": "Scope hold (271700)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_271900_MS",
+      "label": "Scope reference level (271900)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    },
+    {
+      "key": "ICOM_CACHE_QUERY_271A00_MS",
+      "label": "Scope sweep speed (271A00)",
+      "type": "optional-number",
+      "default": "",
+      "min": 0,
+      "max": 1000,
+      "group": "Per-command cache"
+    }
+  ]
+}

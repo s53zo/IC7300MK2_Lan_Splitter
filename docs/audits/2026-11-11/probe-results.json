@@ -1,0 +1,86 @@
+{
+  "node": "v26.13.0",
+  "platform": "darwin/x64",
+  "probes": [
+    {
+      "file": "docs/audits/2026-11-11/reproductions/A-generation-boundary.js",
+      "exitCode": 0,
+      "expectedExitCode": 0,
+      "matched": true,
+      "syntaxCheck": "pass",
+      "meaning": "Observed counterexample or bounded positive fixture assertions reproduced"
+    },
+    {
+      "file": "docs/audits/2026-11-11/reproductions/A-release-read-interleave.js",
+      "exitCode": 0,
+      "expectedExitCode": 0,
+      "matched": true,
+      "syntaxCheck": "pass",
+      "meaning": "Observed counterexample or bounded positive fixture assertions reproduced"
+    },
+    {
+      "file": "docs/audits/2026-11-11/reproductions/B-read-cache-shape.js",
+      "exitCode": 0,
+      "expectedExitCode": 0,
+      "matched": true,
+      "syntaxCheck": "pass",
+      "meaning": "Observed counterexample or bounded positive fixture assertions reproduced"
+    },
+    {
+      "file": "docs/audits/2026-11-11/reproductions/B-statistics-boundaries.js",
+      "exitCode": 0,
+      "expectedExitCode": 0,
+      "matched": true,
+      "syntaxCheck": "pass",
+      "meaning": "Observed counterexample or bounded positive fixture assertions reproduced"
+    },
+    {
+      "file": "docs/audits/2026-11-11/reproductions/C-concurrent-media.js",
+      "exitCode": 0,
+      "expectedExitCode": 0,
+      "matched": true,
+      "syntaxCheck": "pass",
+      "meaning": "Observed counterexample or bounded positive fixture assertions reproduced"
+    },
+    {
+      "file": "docs/audits/2026-11-11/reproductions/C-transport-probes.js",
+      "exitCode": 0,
+      "expectedExitCode": 0,
+      "matched": true,
+      "syntaxCheck": "pass",
+      "meaning": "Observed counterexample or bounded positive fixture assertions reproduced"
+    },
+    {
+      "file": "docs/audits/2026-11-11/reproductions/D-interface-probes.js",
+      "exitCode": 0,
+      "expectedExitCode": 0,
+      "matched": true,
+      "syntaxCheck": "pass",
+      "meaning": "Observed counterexample or bounded positive fixture assertions reproduced"
+    },
+    {
+      "file": "docs/audits/2026-11-11/reproductions/E-headless-failed-release.js",
+      "exitCode": 0,
+      "expectedExitCode": 0,
+      "matched": true,
+      "syntaxCheck": "pass",
+      "meaning": "Observed counterexample or bounded positive fixture assertions reproduced"
+    },
+    {
+      "file": "docs/audits/2026-11-11/reproductions/F-delayed-audio-lease.js",
+      "exitCode": 1,
+      "expectedExitCode": 1,
+      "matched": true,
+      "syntaxCheck": "pass",
+      "meaning": "Desired invariant fails on audited source; see verification guide"
+    },
+    {
+      "file": "docs/audits/2026-11-11/reproductions/F-transport-reconnect.js",
+      "exitCode": 1,
+      "expectedExitCode": 1,
+      "matched": true,
+      "syntaxCheck": "pass",
+      "meaning": "Desired invariant fails on audited source; see verification guide"
+    }
+  ]
+}
