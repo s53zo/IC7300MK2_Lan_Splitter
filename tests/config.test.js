@@ -85,7 +85,7 @@ test('status snapshot exposes only redacted state and cache counters', () => {
     assert.deepEqual(statusSnapshot(service), {
         type: 'status', nativeClients: { active: 0, authenticated: 0, preAuth: 0, granted: 0, civReady: 0, audioReady: 0 },
         admission: { preAuthExpired: 0, preAuthEvictions: 0, resourceRejects: 0 },
-        connectedUpstreamSessions: 1, metrics: null, radio: { state: 'connected', connected: true },
+        connectedUpstreamSessions: 1, metrics: null, telemetry: null, radio: { state: 'connected', connected: true },
         broker: { ready: true, queueDepth: 1, pending: true, txOwned: true }, cache,
     });
     const serialized = JSON.stringify(statusSnapshot(service));
@@ -131,4 +131,12 @@ test('per-command cache environment settings inherit blanks and normalize strict
         'ICOM_CACHE_QUERY_FF_MS', 'ICOM_CACHE_QUERY_ABC_MS']) {
         for (const value of ['', '100']) assert.throws(() => config({ ...defaults, [key]: value }), undefined, key);
     }
+});
+
+
+test('shared telemetry polling is opt-in and validates its master setting', () => {
+    assert.equal(config(defaults).broker.telemetryEnabled, false);
+    assert.equal(config({ ...defaults, ICOM_TELEMETRY_ENABLED: '1' }).broker.telemetryEnabled, true);
+    assert.equal(config({ ...defaults, ICOM_TELEMETRY_ENABLED: '0' }).broker.telemetryEnabled, false);
+    for (const value of ['', 'true', '2', 1]) assert.throws(() => config({ ...defaults, ICOM_TELEMETRY_ENABLED: value }), /ICOM_TELEMETRY_ENABLED/);
 });

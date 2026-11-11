@@ -4,6 +4,7 @@
 const { EventEmitter } = require('node:events');
 const { policyFor, validReply, validateQueryTtls, cacheQuerySettings } = require('./read-cache');
 const { BrokerMetrics } = require('./metrics');
+const { SharedTelemetry } = require('./telemetry');
 
 const PREAMBLE = Buffer.from([0xfe, 0xfe]);
 const controller = 0xe0;
@@ -70,7 +71,7 @@ class Broker extends EventEmitter {
     this.session = session;
     this.server = server;
     this.explicitAddress = options.address !== undefined;
-    this.options = { address: 0xb6, requestTimeoutMs: 2000, maxQueued: 1024, maxPerClient: 64, pollMs: 250, autoStartGraceMs: 1000, cacheEnabled: true, cacheMetersMs: 100, cacheStateMs: 100, cacheSettingsMs: 250, cacheTuningMs: 50, cacheQueryTtls: {}, maxCacheEntries: 128, now: () => performance.now(), ...options };
+    this.options = { address: 0xb6, requestTimeoutMs: 2000, maxQueued: 1024, maxPerClient: 64, pollMs: 250, autoStartGraceMs: 1000, cacheEnabled: true, telemetryEnabled: false, cacheMetersMs: 100, cacheStateMs: 100, cacheSettingsMs: 250, cacheTuningMs: 50, cacheQueryTtls: {}, maxCacheEntries: 128, now: () => performance.now(), ...options };
     for (const key of ['maxQueued', 'maxPerClient', 'maxCacheEntries']) {
       if (!Number.isSafeInteger(this.options[key]) || this.options[key] < 1) throw new Error(`Invalid broker ${key}`);
     }
@@ -78,6 +79,7 @@ class Broker extends EventEmitter {
       if (!Number.isSafeInteger(this.options[key]) || this.options[key] < 0 || this.options[key] > 1000) throw new Error(`Invalid broker ${key}`);
     }
     if (typeof this.options.cacheEnabled !== 'boolean' || typeof this.options.now !== 'function') throw new Error('Invalid read-cache options');
+    if (typeof this.options.telemetryEnabled !== 'boolean') throw new Error('Invalid telemetryEnabled option');
     this.options.cacheQueryTtls = validateQueryTtls(this.options.cacheQueryTtls);
     this.metrics = new BrokerMetrics(this.options.now);
     this.coherenceEpoch = 0;
@@ -110,13 +112,22 @@ class Broker extends EventEmitter {
       [session, 'disconnected', () => this.lost()],
     ];
     for (const [emitter, event, listener] of this.listeners) emitter.on(event, listener);
-    this.timer = setInterval(() => this.poll(), this.options.pollMs);
+    this.telemetry = new SharedTelemetry(this);
+    this.timer = setInterval(() => this.telemetry.active ? this.telemetry.tick() : this.poll(), this.telemetry.active ? 20 : this.options.pollMs);
     if (session.connected) queueMicrotask(() => this.synchronize());
   }
 
+  telemetrySnapshot() { return this.telemetry.snapshot(); }
+
   cacheSnapshot() {
+    const sampled = new Map(this.telemetry.snapshot().querySettings.filter((row) => row.sharing).map((row) => [row.key, row]));
+    const querySettings = cacheQuerySettings(this.options).map((row) => {
+      const telemetry = sampled.get(row.key);
+      return telemetry ? { ...row, source: 'telemetry', configuredMs: row.effectiveMs, effectiveMs: telemetry.maxAgeMs,
+        intervalMs: telemetry.intervalMs, maxAgeMs: telemetry.maxAgeMs } : { ...row, source: 'cache', configuredMs: row.effectiveMs };
+    });
     return { ttlMs: { meters: this.options.cacheMetersMs, state: this.options.cacheStateMs, settings: this.options.cacheSettingsMs, tuning: this.options.cacheTuningMs }, enabled: this.options.cacheEnabled, entries: this.readCache.size, epoch: this.cacheEpoch,
-      ...this.cacheStats, querySettings: cacheQuerySettings(this.options), byQuery: Object.fromEntries([...this.cacheByQuery].map(([key, value]) => [key, { ...value }])) };
+      ...this.cacheStats, querySettings, byQuery: Object.fromEntries([...this.cacheByQuery].map(([key, value]) => [key, { ...value }])) };
   }
 
   metricsSnapshot() {
@@ -143,6 +154,7 @@ class Broker extends EventEmitter {
   clearReadEntries(reason) {
     const removed = this.readCache.size;
     this.readCache.clear();
+    this.telemetry?.invalidate();
     this.metrics.reason('invalidations', reason);
     this.metrics.invalidationEntries.removed += removed;
     if (!removed) this.metrics.invalidationEntries.empty++;
@@ -300,6 +312,9 @@ class Broker extends EventEmitter {
       const policy = classify(bytes);
       if (!policy.read) this.invalidateReads('mutation_admission');
       const item = { bytes, policy, internal: true, purpose, allowNG, resolve, reject, generation: this.generation, cacheEpoch: this.cacheEpoch };
+      if (this.telemetry?.active && ['telemetryPoll', 'periodicPoll'].includes(purpose) && this.telemetry.key(bytes)) {
+        item.telemetryBackground = true; this.telemetry.register(item);
+      }
       if (priority) this.queue.unshift(item); else this.queue.push(item);
       this.pump();
     });
@@ -357,12 +372,17 @@ class Broker extends EventEmitter {
       const item = { client, bytes, policy, generation: this.generation, mediaGeneration: client.mediaGeneration,
         cachePolicy, cacheEpoch: this.cacheEpoch, serial: ++this.requestSerial };
       this.metrics.admit(item);
-      if (urgent) this.queue.unshift(item); else this.queue.push(item);
+      if (urgent) this.queue.unshift(item);
+      else {
+        const background = this.queue.findIndex((queued) => queued.telemetryBackground && queued.purpose === 'telemetryPoll');
+        if (background < 0) this.queue.push(item); else this.queue.splice(background, 0, item);
+      }
       this.pump();
     }
   }
 
   reject(item, error, reason = 'other') {
+    this.telemetry?.finish(item);
     if (item.internal) item.reject(error);
     else {
       this.metrics.finish(item, 'cancelled', reason);
@@ -388,13 +408,23 @@ class Broker extends EventEmitter {
         continue;
       }
       if (!item.internal) {
-        const cached = this.cachedReply(item);
+        const telemetryKey = this.telemetry.eligible(item.bytes);
+        const sample = telemetryKey ? this.telemetry.lookup(item) : null;
+        if (sample) {
+          this.metrics.hit(item, sample, sample.ageMs); this.countCache(item.cachePolicy, 'hits');
+          if (item.serial <= sample.filledThroughSerial) this.countCache(item.cachePolicy, 'coalesced');
+          const delivered = this.sendReadReply(item, sample.reply);
+          this.metrics.finish(item, delivered ? 'completed' : 'cancelled', item.client.active === false ? 'client_disconnect' : 'media_generation');
+          continue;
+        }
+        const cached = telemetryKey ? null : this.cachedReply(item);
         if (cached) {
           const delivered = this.sendReadReply(item, cached);
           this.metrics.finish(item, delivered ? 'completed' : 'cancelled', item.client.active === false ? 'client_disconnect' : 'media_generation');
           continue;
         }
       }
+      if (!item.internal) this.telemetry.prepareFallback(item);
       if (!item.policy.read) this.clearReadEntries('mutation_dispatch');
       if (!item.internal && item.cachePolicy) this.countCache(item.cachePolicy, 'misses');
       if (!item.internal && item.policy.tx) this.advanceTxIncarnation();
@@ -420,6 +450,7 @@ class Broker extends EventEmitter {
         if (this.pending === item) { this.metrics.radioTimeouts++; this.reset(new Error('CI-V reply timed out; resetting upstream session')); }
       }, this.options.requestTimeoutMs);
       item.coherenceAtDispatch = this.coherenceEpoch;
+      this.telemetry.dispatched(item);
       this.metrics.start(item, item.internal ? item.purpose : item.policy.read ? 'clientRead' : 'clientWrite');
       try { this.session.sendCiv(bytes, { group: 'transaction' }); }
       catch (error) { this.metrics.physicalSendErrors++; this.reset(error); return; }
@@ -500,6 +531,8 @@ class Broker extends EventEmitter {
       clearTimeout(item.timer);
       this.pending = null;
       this.session.serial?.invalidate('transaction');
+      this.telemetry.finish(item);
+      const telemetryBefore = { epoch: this.cacheEpoch, coherence: this.coherenceEpoch };
       this.metrics.reply(item);
       if (cmd === 0xfa) this.invalidateReads('negative_reply');
       if (cmd === 0x1c && bytes[5] === 0 && bytes.length >= 8) {
@@ -507,7 +540,7 @@ class Broker extends EventEmitter {
         this.observedTx = Boolean(bytes[6]);
       }
       if (!item.policy.read) this.clearReadEntries('mutation_outcome');
-      if (cmd !== 0xfa && cmd !== 0xfb) this.rememberReply(item, bytes);
+      if (cmd !== 0xfa && cmd !== 0xfb) { this.telemetry.observe(item, bytes, telemetryBefore); this.rememberReply(item, bytes); }
       if (item.internal) {
         if (cmd === 0xfa && !item.allowNG) item.reject(new Error('Radio rejected safety/query command'));
         else item.resolve(bytes);
@@ -622,6 +655,7 @@ class Broker extends EventEmitter {
   advanceTxIncarnation() {
     ++this.txIncarnation;
     this.receivePolls = 0;
+    this.receivePollSince = null;
   }
 
   async stopKeyer(priority = false, purpose = 'internal') {
@@ -652,9 +686,13 @@ class Broker extends EventEmitter {
       // receive() may dispatch a queued start before this continuation runs.
       // Even the same owner restarting a trigger makes this sample obsolete.
       if (!current()) return;
-      if (bytes[6]) this.receivePolls = 0;
-      else this.receivePolls = (this.receivePolls || 0) + 1;
-      if (!owner || this.receivePolls < 3 || !started()) return;
+      if (bytes[6]) { this.receivePolls = 0; this.receivePollSince = null; }
+      else {
+        if (!this.receivePolls) this.receivePollSince = this.options.now();
+        this.receivePolls = (this.receivePolls || 0) + 1;
+      }
+      const stable = this.receivePolls >= 3 && (!this.telemetry.active || this.options.now() - this.receivePollSince >= 500);
+      if (!owner || !stable || !started()) return;
       if (this.lease === 'cw' && performance.now() >= this.cwDeadline) this.release();
       if (this.lease === 'tuner' && this.activeTriggers.has('tuner')) {
         const tuner = await this.internal([0x1c, 1], false, true, 'periodicPoll');

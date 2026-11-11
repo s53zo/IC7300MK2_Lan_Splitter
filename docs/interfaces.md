@@ -234,3 +234,41 @@ per-query lifetimes.
 Only the reviewed read-query allowlist is configurable. These controls cannot
 cache writes, arbitrary commands or credential-bearing menu reads. Internal TX
 safety and release queries always read the radio freshly.
+
+## Shared telemetry polling (builds after v0.8.1)
+
+The optional **Shared telemetry polling** setting uses one stream of radio
+samples for all clients. With the global cache switch enabled, targets are:
+
+| Read query | Refresh target |
+| --- | --- |
+| S-meter `1502`, RX/TX `1C00` | 100 ms |
+| ADC overflow `1507` | 500 ms |
+| Power `1511`, SWR `1512`, ALC `1513` | 100 ms during confirmed TX |
+
+During confirmed RX the radio protocol defines zero for the three TX meters;
+local zero replies require a current validated RX sample. TX ownership or a
+quiet VOX lease alone does not enable TX-meter polling. ADC overflow is receiver
+input/ADC overload (the radio's OVF indicator), not a network buffer overflow.
+A 500 ms poll samples the flag; it does not capture every shorter pulse.
+
+Normal requests use shared samples. Maximum sample ages are 300 ms for fast
+values and 1000 ms for ADC, allowing bounded scheduling jitter. These limits
+replace positive legacy cache lifetimes for managed queries while the mode is
+on; configured lifetimes remain saved for when it is off. Effective lifetime
+zero opts a query out of shared replies/polling, except fresh RX/TX safety reads
+still run. The global cache switch disables the feature and restores legacy
+polling. The setting defaults off; existing profiles are not silently changed.
+
+Cold, stale or invalidated samples can require an explicitly counted FIFO
+fallback read to preserve reply ordering and write barriers. Background jobs
+never accumulate duplicates or catch up with a burst after a slow reply. Actual
+rates can be slower than targets under load. Safety release decisions use fresh
+RX/TX reads and retain the stable-RX timing window; ADC/audio handling is not
+changed by this mode.
+
+The Cache view separates scheduled radio reads, local answers, fallback reads,
+refresh targets and current/maximum sample ages. **Locally answered requests are
+not a claim of net radio queries avoided**: background reads still cost radio
+transactions. Use actual radio traffic, transport loss and audio arrival gaps
+when evaluating load. Meter-only counters cover the current splitter instance.

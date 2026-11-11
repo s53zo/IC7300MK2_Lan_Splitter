@@ -15,6 +15,7 @@ const FIELDS = [
     ['ICOM_RADIO_CONTROL_PORT', 'Radio control port', 'Network', 'number', '50001', 'Radio login UDP port.', 1, 65535],
     ['ICOM_RADIO_CIV_PORT', 'Radio CI-V port', 'Network', 'number', '50002', 'Radio command UDP port.', 1, 65535],
     ['ICOM_RADIO_AUDIO_PORT', 'Radio audio port', 'Network', 'number', '50003', 'Radio audio UDP port.', 1, 65535],
+    ['ICOM_TELEMETRY_ENABLED', 'Shared telemetry polling', 'Cache', 'boolean', '0', 'With caching enabled: S-meter and RX/TX every 100 ms, ADC overflow every 500 ms; Power/SWR/ALC every 100 ms during confirmed TX. Shared sample limits replace positive cache lifetimes for these queries; 0 still opts a query out.'],
     ['ICOM_CACHE_ENABLED', 'Enable request cache', 'Cache', 'boolean', '1', 'Serve eligible recent display queries locally. Safety polling always stays fresh.'],
     ['ICOM_CACHE_METERS_MS', 'Meter / ADC cache (ms)', 'Cache', 'number', '100', 'Family default; 0 disables inherited queries. Per-command overrides take priority; maximum 1000 ms.', 0, 1000],
     ['ICOM_CACHE_STATE_MS', 'RX/TX / tuner cache (ms)', 'Cache', 'number', '100', 'Client display default; 0 disables inherited queries. Per-command overrides take priority; safety reads stay fresh.', 0, 1000],

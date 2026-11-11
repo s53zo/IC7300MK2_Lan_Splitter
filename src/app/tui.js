@@ -63,7 +63,7 @@ function contentLines(app) {
             'Ping, command response and queue wait are separate gateway measurements.',
             '', `Client requests: ${number(rates.requestsPerSecond)} /s    Radio transactions: ${number(rates.radioPerSecond)} /s`,
             `Cache hits: ${number(cache.hits, 0)} / ${number(cache.requests, 0)} eligible requests (${number(cache.requests ? 100 * cache.hits / cache.requests : null)}%)`,
-            `Radio queries avoided: ${number(cache.hits, 0)}    Physical radio transactions: ${number(physical, 0)}`,
+            `Client requests answered locally: ${number(cache.hits, 0)}    Physical radio transactions: ${number(physical, 0)}`,
             '', 'SESSION HISTORY — last 15 minutes; resets when this interface closes',
             `Requests/s  ${spark((s.history || []).map((sample) => sample.requestsPerSecond))}`,
             `Radio/s     ${spark((s.history || []).map((sample) => sample.radioPerSecond))}`,
@@ -86,13 +86,18 @@ function contentLines(app) {
     if (app.view === 2) {
         const ttl = cache.ttlMs || {};
         const rows = Object.entries(cache.byQuery || {}).sort(([a], [b]) => a.localeCompare(b));
+        const telemetry = status.telemetry;
+        const sampling = telemetry ? ['', `Shared telemetry: ${telemetry.enabled ? 'On' : telemetry.requested ? 'Paused by global cache disable' : 'Off'}`,
+            'Background reads still count as radio traffic; local answers are not net savings.',
+            ...telemetry.querySettings.map((q) => `${q.key.toUpperCase()} refresh ${q.intervalMs}ms | max age ${q.maxAgeMs}ms | age ${ms(q.sampleAgeMs)} | reads ${q.rfPolls} local ${q.localAnswers} fallback ${q.fallbacks}`)] : [];
         return ['CACHE — current interface session', '',
             `Enabled: ${cache.enabled === true ? 'Yes' : cache.enabled === false ? 'No' : 'Unavailable'}    Entries: ${number(cache.entries, 0)}`,
             `Eligible requests ${number(cache.requests, 0)} | Hits ${number(cache.hits, 0)} | Misses ${number(cache.misses, 0)}`,
             `Hit percentage: ${number(cache.requests ? 100 * cache.hits / cache.requests : null)}% of eligible client requests`,
             `Coalesced: ${number(cache.coalesced, 0)} (included in hits, not additional savings)`,
-            `Radio queries avoided: ${number(cache.hits, 0)} | Physical radio transactions: ${number(metrics.physicalTotal, 0)}`,
-            `Effective TTL: meters/ADC ${ms(ttl.meters)}, RX/TX/tuner ${ms(ttl.state)}, settings ${ms(ttl.settings)}, tuning ${ms(ttl.tuning)}`,
+            `Client requests answered locally: ${number(cache.hits, 0)} | Physical radio transactions: ${number(metrics.physicalTotal, 0)}`,
+            `Family defaults: meters/ADC ${ms(ttl.meters)}, RX/TX/tuner ${ms(ttl.state)}, settings ${ms(ttl.settings)}, tuning ${ms(ttl.tuning)}`,
+            ...sampling,
             '', 'QUERY        REQUESTS      HITS      MISSES      COALESCED    TTL ms',
             ...rows.map(([query, count]) => `${safe(query).padEnd(12)} ${number(count.requests, 0).padStart(8)} ${number(count.hits, 0).padStart(9)} ${number(count.misses, 0).padStart(11)} ${number(count.coalesced, 0).padStart(12)} ${querySetting(cache, query).padStart(9)}`),
             ...(!rows.length ? ['No eligible client queries yet.'] : []),

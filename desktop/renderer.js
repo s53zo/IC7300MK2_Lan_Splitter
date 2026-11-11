@@ -23,7 +23,7 @@ const pendingActions = new Set();
 const descriptions = {
     dashboard: ['Dashboard', 'One radio connection. All your clients.'],
     clients: ['Clients', 'See who is sharing your radio connection.'],
-    cache: ['Cache', 'See the radio queries your splitter saves.'],
+    cache: ['Cache', 'See client answers, sample freshness and physical radio traffic.'],
     settings: ['Settings', 'Saved on this computer. Ready next time you open the app.'],
     diagnostics: ['Diagnostics', 'Useful details when something needs attention.'],
 };
@@ -117,7 +117,7 @@ function render(next) {
     text('client-count', count(counts.authenticated)); text('nav-clients', count(counts.authenticated));
     text('client-detail', `${count(counts.audioReady)} receiving audio · ${count(counts.civReady)} ready for commands`);
     text('cache-percent', number(cache.requests) ? `${decimal(number(cache.hits) / number(cache.requests) * 100)}%` : '—');
-    text('cache-detail', `${count(cache.hits)} radio queries avoided this session`);
+    text('cache-detail', `${count(cache.hits)} client requests answered locally this session`);
     text('radio-rate', decimal(rates.radioPerSecond));
     text('uptime', duration(state.uptimeMs));
     text('ping-ms', timing.pingStale ? '—' : milliseconds(timing.pingMs));
@@ -135,7 +135,8 @@ function render(next) {
     byId('pending-banner').hidden = !state.pendingChanges;
     text('eligible-count', count(cache.requests)); text('avoided-count', count(cache.hits)); text('miss-count', count(cache.misses)); text('coalesced-count', count(cache.coalesced));
     text('cache-enabled', cache.enabled === false ? 'Disabled' : 'Enabled');
-    text('query-lifetime-heading', state.running ? 'Active lifetime' : 'Last active lifetime');
+    text('query-lifetime-heading', state.running ? 'Lifetime / sample age limit' : 'Last lifetime / sample age limit');
+    renderTelemetry(status.telemetry);
     renderClients(state.clients || []); renderQueries(cache.byQuery || {}, cache.querySettings || []); renderTtls(cache.ttlMs || {}); renderHistory(state.history || []); renderEvents(state.events || []);
     if (state.lastError) message(state.lastError, true);
     text('setup-eyebrow', state.firstRun ? 'FIRST-TIME SETUP' : 'RADIO & NETWORK');
@@ -162,10 +163,49 @@ function renderQueries(queries, querySettings) {
         parameter.append(element('span', policy?.label || 'Radio query', 'query-label'), element('small', key.toUpperCase(), 'mono query-code'));
         const lifetime = element('td', policy ? `${policy.effectiveMs} ms` : '—');
         lifetime.dataset.queryTtl = key.toLowerCase();
-        if (policy) lifetime.title = policy.effectiveMs === 0 ? 'Caching is disabled for this query.' : policy.overrideMs === null ? 'Uses the active family default.' : 'Uses a per-command override.';
+        if (policy) {
+            lifetime.title = policy.effectiveMs === 0 ? 'Local sharing is disabled for this query.' : policy.source === 'telemetry'
+                ? `Shared telemetry: ${milliseconds(policy.intervalMs ?? policy.pollMs)} refresh target; ${milliseconds(policy.effectiveMs)} maximum sample age. The saved legacy cache lifetime applies when telemetry is off.`
+                : policy.overrideMs === null ? 'Uses the active family default.' : 'Uses a per-command override.';
+            if (policy.source === 'telemetry') lifetime.append(element('small', `Shared · ${milliseconds(policy.intervalMs ?? policy.pollMs)}${['1511', '1512', '1513'].includes(key.toLowerCase()) ? ' TX' : ''} refresh`, 'query-mode'));
+        }
         row.append(parameter, lifetime, element('td', count(query.requests)), element('td', count(query.hits)), element('td', query.requests ? `${decimal(query.hits / query.requests * 100)}%` : '—'), element('td', count(query.coalesced))); root.append(row);
     }
     if (!root.children.length) { const row = element('tr'); const cell = element('td', 'Query statistics will appear when clients start polling.'); cell.colSpan = 6; row.append(cell); root.append(row); }
+}
+function renderTelemetry(telemetry) {
+    const root = byId('telemetry-rows'); root.replaceChildren();
+    const rows = Array.isArray(telemetry?.querySettings) ? telemetry.querySettings : [];
+    const active = telemetry?.enabled === true;
+    const available = telemetry && typeof telemetry.enabled === 'boolean';
+    text('telemetry-status', !available ? 'Unavailable' : active ? 'Enabled' : telemetry.requested ? 'Paused — cache disabled' : 'Off');
+    byId('telemetry-status').className = `badge${active ? ' live' : ''}`;
+    text('telemetry-description', !available ? 'Sampling information appears when the splitter starts.' : active
+        ? 'S-meter and fresh RX/TX state target 100 ms; ADC overflow targets 500 ms. Power, SWR and ALC target 100 ms only during confirmed TX. Slower radio replies skip ticks instead of building a polling backlog.'
+        : telemetry.requested ? 'The global cache switch has disabled shared sampling. Normal fresh safety polling continues.'
+            : 'Shared sampling is off. Queries use the normal cache lifetimes; fresh safety polling continues. Enable Shared telemetry polling in Settings to use the fixed sampling schedule.');
+    const total = (key) => available ? count(rows.reduce((sum, row) => sum + number(row[key]), 0)) : '—';
+    text('telemetry-polls', total('rfPolls')); text('telemetry-answers', total('localAnswers')); text('telemetry-fallbacks', total('fallbacks'));
+    const labels = { '1502': 'S-meter', '1507': 'ADC overflow', '1c00': 'RX/TX state', '1511': 'Power meter', '1512': 'SWR meter', '1513': 'ALC meter' };
+    const rx = rows.find((row) => row.key === '1c00');
+    for (const sample of rows) {
+        const key = String(sample.key || '').toLowerCase(), row = element('tr'), parameter = element('td');
+        parameter.append(element('span', labels[key] || 'Radio query', 'query-label'), element('small', key.toUpperCase(), 'mono query-code'));
+        let mode = !active ? 'Paused' : sample.polling ? sample.sharing ? 'Polling + shared' : 'Safety only' : !sample.sharing ? 'Not shared' : sample.txOnly ? 'Waiting for TX state' : 'Paused';
+        const stale = Number.isFinite(sample.sampleAgeMs) && sample.fresh === false;
+        let age = Number.isFinite(sample.sampleAgeMs) ? `${milliseconds(sample.sampleAgeMs)}${stale ? ' (stale)' : ''}` : '—';
+        if (active && sample.sharing && sample.polling && sample.fresh === false) mode = stale ? 'Polling · stale sample' : 'Polling · awaiting sample';
+        if (active && sample.sharing && sample.txOnly && !sample.polling && state.dashboard?.rxTx === 'RX' && rx?.fresh === true && Number.isFinite(rx.sampleAgeMs)) {
+            mode = 'RX: zero replies'; age = `RX state ${milliseconds(rx.sampleAgeMs)}`;
+        }
+        const status = element('td', mode); status.title = `${count(sample.zeroReplies)} documented RX zero replies; ${count(sample.backpressureSkips)} ticks skipped while a read was outstanding.`;
+        const schedule = element('td');
+        schedule.append(element('span', `${milliseconds(sample.intervalMs)}${sample.txOnly ? ' TX' : ''} refresh`, 'telemetry-target'),
+            element('small', sample.sharing ? `${milliseconds(sample.maxAgeMs)} max age` : 'Not shared', 'telemetry-limit'));
+        row.append(parameter, schedule, element('td', age), status, element('td', count(sample.rfPolls)), element('td', count(sample.localAnswers)));
+        root.append(row);
+    }
+    if (!rows.length) { const row = element('tr'), cell = element('td', 'No sampling status is available yet.'); cell.colSpan = 6; row.append(cell); root.append(row); }
 }
 function renderTtls(ttls) {
     const root = byId('ttl-cards'); root.replaceChildren();
@@ -177,7 +217,7 @@ function renderHistory(history) {
     const samples = history.slice(-900), max = Math.max(1, ...samples.flatMap((s) => [number(s.requestsPerSecond), number(s.radioPerSecond)]));
     const points = (key) => samples.map((s, i) => `${samples.length < 2 ? 0 : i / (samples.length - 1) * 640},${175 - number(s[key]) / max * 155}`).join(' ');
     byId('requests-line').setAttribute('points', points('requestsPerSecond')); byId('radio-line').setAttribute('points', points('radioPerSecond'));
-    text('graph-caption', samples.length ? `Peak ${decimal(max)} / s · ${samples.length} samples. Radio traffic includes fresh safety polls and uncached commands. History clears when you close the app.` : 'The graph will begin when the splitter connects.');
+    text('graph-caption', samples.length ? `Peak ${decimal(max)} / s · ${samples.length} samples. Radio traffic includes scheduled sampling, fresh safety polls and uncached commands. History clears when you close the app.` : 'The graph will begin when the splitter connects.');
 }
 function renderEvents(events) {
     const root = byId('event-list'); root.replaceChildren(); byId('events-empty').hidden = events.length > 0;

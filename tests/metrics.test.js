@@ -48,3 +48,15 @@ test('query reasons and cache fill origins expose counts without accepting unbou
     assert.ok(!JSON.stringify(result).includes('sensitive-error-value'));
     assert.ok(!JSON.stringify(result).includes('private-password'));
 });
+
+
+test('background telemetry is counted as paid radio traffic rather than a saved query', () => {
+    const metrics = new BrokerMetrics(() => 0);
+    metrics.start({ internal: true }, 'telemetryPoll');
+    metrics.start({ internal: true }, 'periodicPoll');
+    const result = metrics.snapshot();
+    assert.equal(result.physical.telemetryPoll, 1);
+    assert.equal(result.physical.periodicPoll, 1);
+    assert.equal(result.physicalTotal, 2);
+    assert.equal(result.logical.admitted, 0);
+});

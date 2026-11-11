@@ -33,6 +33,8 @@ Optional:
   ICOM_CLIENT_TIMEOUT_MS  Downstream heartbeat timeout; default 15000
   ICOM_RADIO_TIMEOUT_MS   Upstream heartbeat timeout; default 15000
   ICOM_COMMAND_TIMEOUT_MS CI-V transaction timeout; default 2000
+  ICOM_TELEMETRY_ENABLED  Shared fixed-rate meter polling: 0 or 1; default 0
+                         S-meter/RXTX100ms, ADC500ms; Power/SWR/ALC100ms in TX
   ICOM_CACHE_ENABLED      Client read cache/coalescing: 0 or 1; default 1
   ICOM_CACHE_METERS_MS    Meter/ADC overflow TTL; default 100
   ICOM_CACHE_STATE_MS     RX/TX and tuner TTL; default 100
@@ -69,6 +71,7 @@ function statusSnapshot(service) {
             preAuthEvictions: service.server?.stats?.preAuthEvictions || 0, resourceRejects: service.server?.stats?.resourceRejects || 0 },
         connectedUpstreamSessions: service.session.connected ? 1 : 0,
         metrics: service.broker.metricsSnapshot?.() || null,
+        telemetry: service.broker.telemetrySnapshot?.() || null,
         radio: { state: service.session.state, connected: Boolean(service.session.connected) },
         broker: {
             ready: Boolean(service.broker.ready), queueDepth: service.broker.queue.length,

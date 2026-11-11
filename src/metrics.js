@@ -24,7 +24,7 @@ const REASONS = {
     rejected: ['invalid_radio', 'permission', 'queue_capacity', 'other'],
     cancelled: ['client_disconnect', 'media_generation', 'permission', 'session_loss', 'tx_transition', 'queue_capacity', 'other'],
 };
-const PHYSICAL = ['clientRead', 'clientWrite', 'periodicPoll', 'startup', 'release', 'internal'];
+const PHYSICAL = ['clientRead', 'clientWrite', 'periodicPoll', 'telemetryPoll', 'startup', 'release', 'internal'];
 const zeroes = (keys) => Object.fromEntries(keys.map((key) => [key, 0]));
 class BrokerMetrics {
     constructor(now) {

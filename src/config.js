@@ -71,6 +71,7 @@ function config(env = process.env) {
         broker: {
             requestTimeoutMs: integer(env.ICOM_COMMAND_TIMEOUT_MS, 'ICOM_COMMAND_TIMEOUT_MS', 2000, 100, 30000),
             cacheEnabled: boolean(env.ICOM_CACHE_ENABLED, 'ICOM_CACHE_ENABLED', true),
+            telemetryEnabled: boolean(env.ICOM_TELEMETRY_ENABLED, 'ICOM_TELEMETRY_ENABLED', false),
             cacheQueryTtls,
             cacheMetersMs: integer(env.ICOM_CACHE_METERS_MS, 'ICOM_CACHE_METERS_MS', 100, 0, 1000),
             cacheStateMs: integer(env.ICOM_CACHE_STATE_MS, 'ICOM_CACHE_STATE_MS', 100, 0, 1000),
