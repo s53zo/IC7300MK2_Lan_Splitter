@@ -113,7 +113,7 @@ class Broker extends EventEmitter {
     ];
     for (const [emitter, event, listener] of this.listeners) emitter.on(event, listener);
     this.telemetry = new SharedTelemetry(this);
-    this.timer = setInterval(() => this.telemetry.active ? this.telemetry.tick() : this.poll(), this.telemetry.active ? 20 : this.options.pollMs);
+    this.timer = setInterval(() => this.telemetry.active ? this.telemetry.tick() : this.poll(), this.telemetry.active ? 5 : this.options.pollMs);
     if (session.connected) queueMicrotask(() => this.synchronize());
   }
 
