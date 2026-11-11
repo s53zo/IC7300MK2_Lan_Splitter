@@ -89,6 +89,7 @@ class Broker extends EventEmitter {
     this.cacheStats = { requests: 0, hits: 0, coalesced: 0, misses: 0, invalidations: 0 };
     this.cacheByQuery = new Map();
     this.queue = [];
+    this.deferredStops = new Set();
     this.parsers = new Map();
     this.radioParser = new FrameParser();
     this.ready = false;
@@ -120,7 +121,7 @@ class Broker extends EventEmitter {
   resetStatistics() {
     // Retire only accounting for existing admissions; their work and replies
     // continue unchanged. Physical sends after this boundary still count.
-    for (const item of [...this.queue, this.pending].filter(Boolean)) {
+    for (const item of [...this.queue, this.pending, ...this.deferredStops].filter(Boolean)) {
       item.suppressCacheStatistics = true;
       if (!item.internal) item.metricsFinished = true;
     }
@@ -280,6 +281,8 @@ class Broker extends EventEmitter {
   }
 
   cancelAll(error, reason = 'session_loss') {
+    for (const item of this.deferredStops) this.metrics.finish(item, 'cancelled', reason);
+    this.deferredStops.clear();
     const work = [...this.queue];
     this.queue = [];
     if (this.pending) { clearTimeout(this.pending.timer); work.unshift(this.pending); this.pending = null; }
@@ -564,8 +567,12 @@ class Broker extends EventEmitter {
         if (cmd === 0xfa && !item.allowNG) item.reject(new Error('Radio rejected safety/query command'));
         else item.resolve(bytes);
       } else {
-        const delivered = this.sendReadReply(item, bytes);
-        this.metrics.finish(item, delivered ? 'completed' : 'cancelled', item.client.active === false ? 'client_disconnect' : 'media_generation', cmd === 0xfa);
+        const deferStop = cmd === 0xfb && item.policy.release && this.owner === item.client
+          && (item.policy.release === 'ptt' || [...this.activeTriggers].every((kind) => kind === item.policy.release));
+        if (!deferStop) {
+          const delivered = this.sendReadReply(item, bytes);
+          this.metrics.finish(item, delivered ? 'completed' : 'cancelled', item.client.active === false ? 'client_disconnect' : 'media_generation', cmd === 0xfa);
+        }
         if (cmd !== 0xfa) {
           this.broadcastState(item.policy.read ? bytes : item.bytes);
           if (item.bytes[4] === 0x16 && item.bytes[5] === 0x46 && item.bytes[6] === 0) this.txObligations.delete('vox');
@@ -589,7 +596,10 @@ class Broker extends EventEmitter {
           if (item.policy.release && this.owner === item.client) {
             this.activeTriggers.delete(item.policy.release);
             this.updateLease();
-            if (item.policy.release === 'ptt' || !this.activeTriggers.size) this.release();
+            if (item.policy.release === 'ptt' || !this.activeTriggers.size) {
+              if (deferStop) this.deferStopReply(item, bytes);
+              else this.release();
+            }
           }
         } else if (item.policy.tx && this.owner === item.client) {
           if (!this.activeTriggers.has(item.policy.tx)) this.txObligations.delete(item.policy.tx);
@@ -598,6 +608,18 @@ class Broker extends EventEmitter {
       }
       this.pump();
     }
+  }
+
+  deferStopReply(item, bytes) {
+    this.deferredStops.add(item);
+    void this.release().then((success) => {
+      if (!this.deferredStops.delete(item)) return;
+      const current = success && item.generation === this.generation && !this.closed && this.session.connected
+        && item.client.active !== false && item.mediaGeneration === item.client.mediaGeneration;
+      const delivered = current && this.sendReadReply(item, bytes);
+      this.metrics.finish(item, delivered ? 'completed' : 'cancelled',
+        item.client.active === false ? 'client_disconnect' : item.mediaGeneration !== item.client.mediaGeneration ? 'media_generation' : 'session_loss');
+    });
   }
 
   audio(client, pcm) {
@@ -611,6 +633,11 @@ class Broker extends EventEmitter {
   }
 
   disconnect(client) {
+    for (const item of this.deferredStops) {
+      if (item.client !== client) continue;
+      this.deferredStops.delete(item);
+      this.metrics.finish(item, 'cancelled', 'client_disconnect');
+    }
     this.parsers.delete(client);
     const keep = [];
     for (const item of this.queue) {
@@ -639,13 +666,16 @@ class Broker extends EventEmitter {
           else keep.push(item);
         }
         this.queue = keep;
-        if (!this.session.connected) return;
+        if (!this.session.connected) return false;
         await this.internal([0x1c, 0, 0], false, true, 'release');
+        if (generation !== this.generation || !this.session.connected) return false;
         await this.stopKeyer(true, 'release');
+        if (generation !== this.generation || !this.session.connected) return false;
         await this.stopInitiators(true, 'release');
+        if (generation !== this.generation || !this.session.connected) return false;
         const result = await this.internal([0x1c, 0], false, true, 'release');
         if (result[6] !== 0) throw new Error('Radio has not confirmed TX release');
-        if (generation !== this.generation) return;
+        if (generation !== this.generation || !this.session.connected) return false;
         this.owner = null;
         this.lease = null;
         this.txObligations.clear();
@@ -656,8 +686,10 @@ class Broker extends EventEmitter {
         this.stopRequested = false;
         this.emit('status', { state: 'ready' });
         this.pump();
+        return true;
       } catch (error) {
         if (generation === this.generation && this.session.connected) this.reset(error);
+        return false;
       }
     })();
     return this.releasePromise;

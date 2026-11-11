@@ -478,3 +478,110 @@ test('rejected keyer stop in CW blocks readiness instead of allowing handover', 
   assert.equal(radio.commands.length, before);
   assert.equal(server.sent.at(-1).bytes[4], 0xfa);
 });
+
+test('lease-ending OFF ACK waits for RX cleanup and PiRO can immediately read and restore 0084', async (t) => {
+  const { radio, server, broker, a, b, send } = await setup(t);
+  const respond = radio.respond.bind(radio);
+  radio.respond = (bytes = radio.commands.at(-1)) => {
+    if (bytes[4] === 0x1a && bytes.length === 9) radio.emit('civ', answer([0x1a, 5, 0, 0x84, 3]));
+    else respond(bytes);
+  };
+  send(a, [0x1c, 0, 1]); await tick(); server.sent.length = 0;
+  const before = broker.metricsSnapshot().logical;
+  radio.auto = false; send(a, [0x1c, 0, 0]); const stop = broker.pending;
+  radio.respond();
+  assert.equal(broker.releasing, true); assert.equal(server.sent.length, 0);
+  assert.equal(broker.metricsSnapshot().logical.completed, before.completed);
+  assert.equal(broker.metricsSnapshot().logical.active, 1);
+  send(b, [0x1a, 5, 0, 0x84, 1]);
+  assert.equal(server.sent.at(-1).client, b); assert.equal(server.sent.at(-1).bytes[4], 0xfa);
+  const deliver = server.sendCiv.bind(server); let stopAcknowledged = false;
+  server.sendCiv = (client, bytes) => {
+    deliver(client, bytes);
+    if (client !== a) return;
+    if (!stopAcknowledged && bytes[4] === 0xfb) {
+      stopAcknowledged = true;
+      assert.equal(broker.releasing, false); assert.equal(broker.observedTx, false);
+      send(a, [0x1a, 5, 0, 0x84]);
+    } else if (bytes[4] === 0x1a) send(a, [0x1a, 5, 0, 0x84, bytes[8]]);
+  };
+  radio.auto = true; radio.respond();
+  assert.equal(await broker.releasePromise, true); await tick();
+  assert.equal(stopAcknowledged, true); assert.equal(stop.metricsFinished, true);
+  assert.equal(server.sent.filter((r) => r.client === a && r.bytes[4] === 0xfa).length, 0);
+  assert.equal(server.sent.filter((r) => r.client === a && r.bytes[4] === 0xfb).length, 2);
+  assert.ok(radio.commands.some((bytes) => bytes.equals(cmd([0x1a, 5, 0, 0x84, 3]))));
+  assert.equal(broker.metricsSnapshot().logical.active, 0);
+});
+
+test('failed lease cleanup returns false and never forwards the original successful OFF ACK', async (t) => {
+  const { radio, server, broker, a, send } = await setup(t);
+  send(a, [0x1c, 0, 1]); await tick(); server.sent.length = 0;
+  radio.auto = false; send(a, [0x1c, 0, 0]); radio.respond();
+  const cleanup = broker.releasePromise;
+  radio.emit('civ', answer([0xfa]));
+  assert.equal(await cleanup, false); await tick();
+  assert.equal(server.sent.some((r) => r.bytes[4] === 0xfb), false);
+  assert.equal(broker.metricsSnapshot().logical.active, 0);
+  assert.equal(broker.metricsSnapshot().logical.cancelled, 1);
+  assert.equal(broker.ready, false);
+});
+
+test('deferred stop replies cannot escape disconnect, media replacement, reset or radio session replacement', async (t) => {
+  for (const event of ['disconnect', 'media', 'reset', 'session']) {
+    const { radio, server, broker, a, send } = await setup(t);
+    a.mediaGeneration = 1;
+    send(a, [0x1c, 0, 1]); await tick(); server.sent.length = 0;
+    radio.auto = false; send(a, [0x1c, 0, 0]); radio.respond();
+    const cleanup = broker.releasePromise;
+    if (event === 'disconnect') { a.active = false; server.emit('disconnect', a); }
+    if (event === 'media') a.mediaGeneration++;
+    if (event === 'reset') broker.reset(new Error('fixture reset'));
+    if (event === 'session') {
+      radio.fail(new Error('fixture session replaced')); radio.auto = true;
+      const ready = once(broker, 'ready'); radio.connected = true; radio.emit('connected'); await ready;
+    } else if (radio.connected) { radio.auto = true; radio.respond(); }
+    await cleanup; await tick();
+    assert.equal(server.sent.some((r) => r.bytes[4] === 0xfb), false, event);
+    assert.equal(broker.deferredStops.size, 0, event);
+    assert.equal(broker.metricsSnapshot().logical.active, 0, event);
+    assert.equal(broker.metricsSnapshot().logical.cancelled, 1, event);
+  }
+});
+
+test('partial-trigger stop retains its immediate ACK while another trigger holds the lease', async (t) => {
+  const { radio, server, broker, a, send } = await setup(t);
+  send(a, [0x1c, 0, 1]); await tick();
+  send(a, [0x16, 0x46, 1]); await tick(); server.sent.length = 0;
+  radio.auto = false; send(a, [0x16, 0x46, 0]); radio.respond();
+  assert.equal(server.sent.at(-1).bytes[4], 0xfb); assert.equal(broker.releasing, false);
+  assert.equal(broker.owner, a); assert.equal(broker.lease, 'ptt'); assert.equal(broker.deferredStops.size, 0);
+  radio.auto = true;
+});
+
+test('release reports failure when cleanup commands succeed but RX is not confirmed', async (t) => {
+  const { radio, server, broker, a, send } = await setup(t);
+  send(a, [0x1c, 0, 1]); await tick(); server.sent.length = 0;
+  const respond = radio.respond.bind(radio);
+  radio.respond = (bytes) => {
+    if (bytes[4] === 0x1c && bytes[5] === 0 && bytes.length === 7) radio.emit('civ', answer([0x1c, 0, 1]));
+    else respond(bytes);
+  };
+  send(a, [0x1c, 0, 0]); await tick();
+  assert.equal(await broker.releasePromise, false);
+  assert.equal(server.sent.some((r) => r.bytes[4] === 0xfb), false);
+  assert.equal(broker.metricsSnapshot().logical.cancelled, 1);
+  assert.equal(broker.ready, false);
+});
+
+test('statistics reset during a deferred stop preserves delivery without importing old logical totals', async (t) => {
+  const { radio, server, broker, a, send } = await setup(t);
+  send(a, [0x1c, 0, 1]); await tick(); server.sent.length = 0;
+  radio.auto = false; send(a, [0x1c, 0, 0]); radio.respond();
+  assert.equal(broker.deferredStops.size, 1);
+  broker.resetStatistics();
+  radio.auto = true; radio.respond(); await broker.releasePromise; await tick();
+  assert.equal(server.sent.filter((r) => r.bytes[4] === 0xfb).length, 1);
+  assert.equal(broker.metricsSnapshot().logical.active, 0);
+  assert.equal(broker.metricsSnapshot().logical.completed, 0);
+});
