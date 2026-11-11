@@ -30,7 +30,7 @@ current browser session but invalidates other sessions using the old identity.
 ## Features
 
 The same Dashboard, Clients, Cache, Settings and Diagnostics views as the desktop
-app show the locally running service. This includes all 89 configuration fields,
+app show the locally running service. This includes all 90 configuration fields,
 per-command lifetimes, live client/cache statistics, measured heartbeat ping,
 radio response and queue delay, active versus saved settings, and session-only
 15-minute history. History belongs to the service process, not a browser tab;
@@ -67,7 +67,11 @@ does not restore counters from before the reset.
 ## Service setup
 
 Use [the systemd example](services/icom-lan-splitter-web.service), adapting the
-service account and Node path. Install OpenSSL for local certificate generation.
+service account, installation path and LAN address. Its default launch command
+uses an extracted Linux standalone executable; no Node.js installation is needed.
+For a source checkout, use the commented Node.js command instead, with an absolute
+Node path and the checkout's `src/cli.js`. Keep `--web` in either command.
+Install OpenSSL for local certificate generation.
 The existing protected EnvironmentFile supplies initial radio settings and
 `ICOM_PASSWORD_FILE`; never put passwords in command arguments. After a valid
 saved profile exists, browser-saved radio settings take precedence over the old
@@ -89,8 +93,28 @@ writable for its account when hardening the unit. To run from a source checkout:
 node src/cli.js --web --config-dir /path/to/private-state
 ```
 
-New Linux standalone builds embed the web assets and accept the same `--web`
-mode. Earlier v0.8.1 downloads do not contain this subsequently added mode.
+From a newly extracted Linux standalone directory, the equivalent command is:
+
+```sh
+./icom-lan-splitter --web --config-dir /path/to/private-state
+```
+
+New Linux standalone builds embed the web assets. Earlier v0.8.1 downloads do not
+contain this subsequently added mode. Copy the adapted unit to
+`/etc/systemd/system/icom-lan-splitter-web.service`, then run:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now icom-lan-splitter-web
+sudo systemctl status icom-lan-splitter-web
+journalctl -u icom-lan-splitter-web -f
+```
+
+Allow HTTPS TCP port 50004 and the configured native UDP ports through the host
+firewall for the intended local network. Use
+`sudo systemctl stop icom-lan-splitter-web` for normal service shutdown.
 The management server starts before attempting the radio, so an unreachable
 radio can still be configured through the browser. Process shutdown attempts
-normal TX release. Local duplicate-instance protection still applies.
+normal TX release. The unit's stop timeout is a last resort; an unreachable radio
+cannot confirm receive or accept stop commands. Local duplicate-instance
+protection still applies.

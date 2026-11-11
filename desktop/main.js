@@ -26,6 +26,12 @@ class DesktopCredentials {
         await this.available();
         await require('../src/app/store').atomicWrite(this.file, await this.safeStorage.encryptStringAsync(password));
     }
+    forRecovery() {
+        const backup = new DesktopCredentials(path.dirname(this.file), this.safeStorage);
+        backup.file = this.file + '.recovery';
+        return backup;
+    }
+    async remove() { await fs.rm(this.file, { force: true }); }
     describe() { return process.platform === 'darwin' ? 'Protected by macOS Keychain-backed encryption' : 'Protected by your Windows login (DPAPI)'; }
 }
 async function main() {

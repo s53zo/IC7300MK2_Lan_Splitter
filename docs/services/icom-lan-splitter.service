@@ -7,7 +7,9 @@ After=network-online.target
 Type=simple
 User=icom-splitter
 WorkingDirectory=/opt/icom-splitter
-ExecStart=/usr/bin/node /opt/icom-splitter/src/cli.js
+ExecStart=/opt/icom-splitter/icom-lan-splitter --headless
+# Source checkout alternative (replace ExecStart above):
+# ExecStart=/usr/bin/node /opt/icom-splitter/src/cli.js --headless
 Environment=ICOM_RADIO_HOST=10.0.1.25
 Environment=ICOM_USERNAME=your-radio-user
 Environment=ICOM_PASSWORD_FILE=/etc/icom-splitter/password

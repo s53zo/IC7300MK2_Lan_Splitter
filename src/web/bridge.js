@@ -2,10 +2,11 @@
 // Browser-only counterpart of the desktop preload. Authentication stays in a
 // Secure HttpOnly cookie; the CSRF token exists only inside this closure.
 (() => {
-    let csrfToken = '', lastState = null, polling = false, stopped = false, timer, connectionError = false;
+    let csrfToken = '', lastState = null, polling = false, stopped = false, timer, connectionError = false, lifecycle = 0, needsSession = false;
     const serviceNotice = 'Closing this browser leaves the splitter running. Start and Stop control only the radio connection.';
     const subscribers = new Set();
     async function json(url, options = {}) {
+        const startedIn = lifecycle;
         const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...options });
         let result;
         try { result = await response.json(); } catch { throw new Error('The management service returned an unreadable response.'); }
@@ -15,23 +16,34 @@
             const session = await sessionResponse.json();
             signedOut = Boolean(session.ok && session.value && !session.value.authenticated);
         }
-        if (signedOut) { stopped = true; clearInterval(timer); location.replace('/login'); }
+        if (signedOut && lifecycle === startedIn) { stopped = true; clearInterval(timer); timer = null; location.replace('/login'); }
         return result;
     }
-    const ready = json('/api/session').then((result) => {
-        if (!result.ok || !result.value?.authenticated) { stopped = true; location.replace('/login'); return false; }
+    async function verifySession() {
+        const startedIn = lifecycle;
+        const result = await json('/api/session');
+        if (lifecycle !== startedIn || stopped) return false;
+        if (!result.ok || !result.value?.authenticated) { stopped = true; clearInterval(timer); timer = null; location.replace('/login'); return false; }
         csrfToken = result.value.csrfToken || result.value.csrf;
         if (!csrfToken) throw new Error('The management session could not be verified. Sign in again.');
         return true;
-    });
+    }
+    function sessionCheck() {
+        const startedIn = lifecycle;
+        needsSession = false;
+        return verifySession().catch((error) => { if (lifecycle === startedIn) needsSession = true; throw error; });
+    }
+    let ready = sessionCheck();
     function unavailable(error) {
         return { ok: false, error: error?.message || 'Cannot reach the management service. Check the server connection and try again.' };
     }
     async function serverRequest(action, payload) {
-        if (!await ready || stopped) return { ok: false, error: 'Please sign in to the management service.' };
+        const startedIn = lifecycle;
+        if (needsSession && !stopped) ready = sessionCheck();
+        if (!await ready || stopped || lifecycle !== startedIn) return { ok: false, error: 'Please sign in to the management service.' };
         const result = await json('/api/request', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
             body: JSON.stringify({ action, ...(payload === undefined ? {} : { payload }) }) });
-        if (result.ok && action === 'state') lastState = result.value;
+        if (result.ok && action === 'state' && lifecycle === startedIn && !stopped) lastState = result.value;
         return result;
     }
     function downloadReport(report) {
@@ -72,12 +84,13 @@
     }
     async function poll() {
         if (polling || stopped || !subscribers.size) return;
-        polling = true;
+        polling = true; const startedIn = lifecycle;
         try {
             const result = await serverRequest('state');
+            if (stopped || lifecycle !== startedIn) return;
             if (result.ok) { for (const callback of subscribers) callback(result.value); applyBrowserLabels(); if (connectionError) { showStatus(serviceNotice); connectionError = false; } }
             else { connectionError = true; showStatus(result.error || 'The connection to the management service needs attention.', true); }
-        } catch { connectionError = true; showStatus('Cannot reach the management service. Reload this page if the connection does not recover.', true); }
+        } catch { if (!stopped && lifecycle === startedIn) { connectionError = true; showStatus('Cannot reach the management service. Reload this page if the connection does not recover.', true); } }
         finally { polling = false; }
     }
     function text(id, value) { const node = document.getElementById(id); if (node && node.textContent !== value) node.textContent = value; }
@@ -129,7 +142,7 @@
         request,
         subscribe(callback) {
             subscribers.add(callback);
-            if (!timer) timer = setInterval(poll, 1000);
+            if (!timer && !stopped) timer = setInterval(poll, 1000);
             void ready.then(() => poll()).catch((error) => showStatus(error.message, true));
             return () => { subscribers.delete(callback); if (!subscribers.size) { clearInterval(timer); timer = null; } };
         },
@@ -137,5 +150,18 @@
     });
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setupBrowserControls, { once: true });
     else setupBrowserControls();
-    window.addEventListener('pagehide', () => { stopped = true; clearInterval(timer); });
+    window.addEventListener('pagehide', () => { stopped = true; lifecycle++; clearInterval(timer); timer = null; });
+    window.addEventListener('pageshow', (event) => {
+        if (!event.persisted) return;
+        // A BFCache restore resumes this same heap. Its old CSRF token and
+        // authenticated session may have expired while the page was frozen.
+        stopped = false; csrfToken = ''; ready = sessionCheck();
+        // Retain one retry source even if this session check fails transiently.
+        // serverRequest retries authentication before any later state/action.
+        if (subscribers.size && !timer) timer = setInterval(poll, 1000);
+        void ready.then((authenticated) => {
+            if (!authenticated || stopped || !subscribers.size) return;
+            return poll();
+        }).catch((error) => showStatus(error.message, true));
+    });
 })();

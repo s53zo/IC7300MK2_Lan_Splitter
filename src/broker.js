@@ -99,6 +99,7 @@ class Broker extends EventEmitter {
     this.activeTriggers = new Set();
     this.txIncarnation = 0;
     this.observedTx = false;
+    this.releaseUnconfirmed = false;
     this.releasing = false;
     this.stopRequested = false;
     this.generation = 0;
@@ -130,6 +131,7 @@ class Broker extends EventEmitter {
     this.cacheByQuery.clear();
     for (const key of Object.keys(this.stats)) this.stats[key] = 0;
     this.telemetry.resetStatistics();
+    this.session.resetTransportStatistics?.();
     for (const role of ['control', 'serial', 'audio']) {
       const counters = this.session[role]?.counters;
       if (counters) for (const key of Object.keys(counters)) counters[key] = 0;
@@ -153,7 +155,7 @@ class Broker extends EventEmitter {
     const snapshot = this.metrics.snapshot();
     snapshot.eligible.queued = this.queue.filter((item) => !item.internal && !item.metricsFinished && item.cachePolicy).length;
     snapshot.eligible.inFlight = this.pending && !this.pending.internal && !this.pending.metricsFinished && this.pending.cachePolicy ? 1 : 0;
-    snapshot.transport = Object.fromEntries(['control', 'serial', 'audio'].map((role) => [role,
+    snapshot.transport = this.session.transportSnapshot?.() || Object.fromEntries(['control', 'serial', 'audio'].map((role) => [role,
       Object.fromEntries(['malformed', 'stale', 'duplicates', 'lost', 'replayed'].map((key) => [key, this.session[role]?.counters?.[key] || 0]))]));
     return snapshot;
   }
@@ -264,6 +266,7 @@ class Broker extends EventEmitter {
   }
 
   lost() {
+    this.releaseUnconfirmed ||= Boolean(this.owner || this.observedTx || this.releasing || this.stopRequested || this.txObligations.size);
     ++this.generation;
     this.ready = false;
     this.synchronizing = false;
@@ -305,16 +308,17 @@ class Broker extends EventEmitter {
     try {
       // A fresh association prevents stale acknowledgements from earlier
       // sessions confirming these cleanup commands. No mode/routing changes.
-      await this.internal([0x1c, 0, 0], false, false, 'startup');
-      await this.stopKeyer(false, 'startup');
-      await this.stopInitiators(false, 'startup');
-      const result = await this.internal([0x1c, 0], false, false, 'startup');
+      await this.internal([0x1c, 0, 0], false, false, 'startup', generation);
+      await this.stopKeyer(false, 'startup', generation);
+      await this.stopInitiators(false, 'startup', generation);
+      const result = await this.internal([0x1c, 0], false, false, 'startup', generation);
       if (result[6] !== 0) throw new Error('Radio has not confirmed receive state');
       // Output subscriptions belong to the splitter. One client turning off
       // its waterfall must not stop the stream for all other clients.
-      await this.internal([0x27, 0x10, 1], false, false, 'startup');
-      await this.internal([0x27, 0x11, 1], false, false, 'startup');
+      await this.internal([0x27, 0x10, 1], false, false, 'startup', generation);
+      await this.internal([0x27, 0x11, 1], false, false, 'startup', generation);
       if (generation !== this.generation || this.closed) return;
+      this.releaseUnconfirmed = false;
       this.txObligations.clear();
       this.activeTriggers.clear();
       this.cwDeadline = 0;
@@ -328,8 +332,13 @@ class Broker extends EventEmitter {
     }
   }
 
-  internal(payload, allowNG = false, priority = false, purpose = 'internal') {
+  assertSession(generation) {
+    if (generation !== this.generation || !this.session.connected || this.closed) throw new Error('Radio session changed during cleanup');
+  }
+
+  internal(payload, allowNG = false, priority = false, purpose = 'internal', generation = this.generation) {
     return new Promise((resolve, reject) => {
+      this.assertSession(generation);
       const bytes = frame(this.options.address, payload);
       const policy = classify(bytes);
       if (!policy.read) this.invalidateReads('mutation_admission');
@@ -415,7 +424,13 @@ class Broker extends EventEmitter {
   pump() {
     if (this.pending || !this.session.connected || this.closed) return;
     while (this.queue.length) {
-      const item = this.queue.shift();
+      // An awaited cleanup step queues its successor in a microtask. Keep
+      // the dispatch reservation between those steps rather than letting an
+      // unrelated reader occupy the transaction slot in that gap.
+      const reserved = this.releasing ? 'release' : this.synchronizing ? 'startup' : null;
+      const index = reserved ? this.queue.findIndex((work) => work.internal && work.purpose === reserved) : 0;
+      if (index < 0) return;
+      const [item] = this.queue.splice(index, 1);
       if (item.generation !== this.generation || (!item.internal && (!this.allowed(item.client, item.policy) || item.mediaGeneration !== item.client.mediaGeneration))) {
         const reason = item.generation !== this.generation ? 'session_loss' : item.client?.active === false ? 'client_disconnect'
           : item.mediaGeneration !== item.client?.mediaGeneration ? 'media_generation' : 'permission';
@@ -667,13 +682,13 @@ class Broker extends EventEmitter {
         }
         this.queue = keep;
         if (!this.session.connected) return false;
-        await this.internal([0x1c, 0, 0], false, true, 'release');
+        await this.internal([0x1c, 0, 0], false, true, 'release', generation);
         if (generation !== this.generation || !this.session.connected) return false;
-        await this.stopKeyer(true, 'release');
+        await this.stopKeyer(true, 'release', generation);
         if (generation !== this.generation || !this.session.connected) return false;
-        await this.stopInitiators(true, 'release');
+        await this.stopInitiators(true, 'release', generation);
         if (generation !== this.generation || !this.session.connected) return false;
-        const result = await this.internal([0x1c, 0], false, true, 'release');
+        const result = await this.internal([0x1c, 0], false, true, 'release', generation);
         if (result[6] !== 0) throw new Error('Radio has not confirmed TX release');
         if (generation !== this.generation || !this.session.connected) return false;
         this.owner = null;
@@ -682,6 +697,7 @@ class Broker extends EventEmitter {
         this.activeTriggers.clear();
         this.cwDeadline = 0;
         this.observedTx = false;
+        this.releaseUnconfirmed = false;
         this.releasing = false;
         this.stopRequested = false;
         this.emit('status', { state: 'ready' });
@@ -709,17 +725,17 @@ class Broker extends EventEmitter {
     this.receivePollSince = null;
   }
 
-  async stopKeyer(priority = false, purpose = 'internal') {
+  async stopKeyer(priority = false, purpose = 'internal', generation = this.generation) {
     // The physical MK2 rejects 17 FF outside CW/CW-R. Do not manufacture
     // an avoidable NG or change the operator's mode just for cleanup.
-    const mode = await this.internal([0x04], false, priority, purpose);
-    if (mode[5] === 3 || mode[5] === 7) await this.internal([0x17, 0xff], false, priority, purpose);
+    const mode = await this.internal([0x04], false, priority, purpose, generation);
+    if (mode[5] === 3 || mode[5] === 7) await this.internal([0x17, 0xff], false, priority, purpose, generation);
   }
 
-  async stopInitiators(priority = false, purpose = 'internal') {
-    if (this.txObligations.has('voice')) await this.internal([0x28, 0, 0], false, priority, purpose);
-    if (this.txObligations.has('tuner')) await this.internal([0x1c, 1, 0], false, priority, purpose);
-    if (this.txObligations.has('vox')) await this.internal([0x16, 0x46, 0], false, priority, purpose);
+  async stopInitiators(priority = false, purpose = 'internal', generation = this.generation) {
+    if (this.txObligations.has('voice')) await this.internal([0x28, 0, 0], false, priority, purpose, generation);
+    if (this.txObligations.has('tuner')) await this.internal([0x1c, 1, 0], false, priority, purpose, generation);
+    if (this.txObligations.has('vox')) await this.internal([0x16, 0x46, 0], false, priority, purpose, generation);
   }
 
   poll() {
@@ -758,11 +774,14 @@ class Broker extends EventEmitter {
 
   async close() {
     clearInterval(this.timer);
-    if (this.session.connected && this.owner) await this.release();
+    const activeTx = Boolean(this.owner || this.observedTx || this.releaseUnconfirmed || this.releasing || this.stopRequested || this.txObligations.size);
+    let releaseConfirmed = !activeTx;
+    if (this.session.connected && activeTx) releaseConfirmed = await this.release();
     this.closed = true;
     this.lost();
     this.parsers.clear();
     for (const [emitter, event, listener] of this.listeners) emitter.off(event, listener);
+    return { releaseConfirmed };
   }
 }
 

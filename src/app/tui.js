@@ -49,7 +49,7 @@ function contentLines(app) {
     const s = app.state || {}, status = statusOf(s), cache = cacheOf(s), metrics = metricsOf(s);
     if (app.view === 0) {
         const clients = s.clients || [], rates = s.rates || {}, latency = s.latency || {};
-        const connected = status.radio?.connected;
+        const connected = status.radio?.connected && status.broker?.ready;
         const pingStale = latency.pingUpdatedAt != null && app.now() - latency.pingUpdatedAt > 10000;
         const physical = metrics.physicalTotal;
         return [
@@ -234,9 +234,17 @@ class TerminalApp {
             }
             if (action === 'close') { this.cleanup(); return; }
             this.state = this.controller.getState();
-            this.message = action === 'start' ? 'Started.' : action === 'stop' ? 'Stopped.' : 'Reconnected.';
+            if (action === 'start' || action === 'reconnect') {
+                if (!this.state.running && !this.state.connecting) {
+                    const error = this.state.lastError || this.state.error || 'Could not connect. Review the settings and Diagnostics.';
+                    this.message = this.controller.redact?.(error) || error;
+                } else if (this.state.connecting || !this.state.status?.radio?.connected || !this.state.status?.broker?.ready) {
+                    this.message = 'Splitter running; connecting to radio. See Diagnostics for connection progress.';
+                } else this.message = action === 'start' ? 'Started.' : 'Reconnected.';
+            } else this.message = 'Stopped.';
         } catch {
-            this.state = this.controller.getState(); this.message = 'The action failed. See Diagnostics for details.';
+            this.state = this.controller.getState();
+            this.message = this.state.lastError || this.state.error || 'The action failed. See Diagnostics for details.';
         }
         this.draw();
     }

@@ -11,7 +11,19 @@ const { execFileSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
 const NODE_VERSION = '26.13.0';
 const LICENSE_SHA256 = '8e603aa87c70d36e497004f0dec63111511cb61b7d65ace12e10ea791599286c';
+const DOCUMENTATION_FILES = [
+    'docs/interfaces.md', 'docs/linux-web-service.md', 'docs/operations.md', 'docs/releases.md',
+    'docs/services/Start-Splitter.ps1', 'docs/services/icom-lan-splitter-web.service',
+    'docs/services/icom-lan-splitter.service', 'docs/services/local.icom-lan-splitter.plist',
+];
 const run = (command, args, options = {}) => execFileSync(command, args, { stdio: 'inherit', ...options });
+function stageDocumentation(root, stage) {
+    for (const file of DOCUMENTATION_FILES) {
+        const destination = path.join(stage, file);
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        fs.copyFileSync(path.join(root, file), destination);
+    }
+}
 function bundle(root = ROOT) {
     const modules = new Map();
     function visit(id) {
@@ -62,7 +74,8 @@ async function main() {
         run('codesign', ['--sign', '-', '--force', executable]);
         run('codesign', ['--verify', '--strict', executable]);
     }
-    for (const file of ['LICENSE', 'NOTICE.md', 'docs/releases.md', 'docs/interfaces.md', 'docs/operations.md', 'third_party/icom-lan/GPL-3.0.txt']) {
+    stageDocumentation(ROOT, stage);
+    for (const file of ['LICENSE', 'NOTICE.md', 'third_party/icom-lan/GPL-3.0.txt']) {
         const dest = path.join(stage, file); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(path.join(ROOT, file), dest);
     }
     const response = await fetch(`https://raw.githubusercontent.com/nodejs/node/v${NODE_VERSION}/LICENSE`);
@@ -77,6 +90,7 @@ async function main() {
     }, null, 2) + '\n');
     fs.writeFileSync(path.join(stage, 'README.txt'), `IC-7300MK2 LAN Splitter ${label} (${target})\n\nLinux: launch in a terminal for the keyboard interface, or use --tui.
 Use --headless for the environment-configured service.
+Linux builds also support --web for persistent HTTPS management; see docs/linux-web-service.md.
 Run ${path.basename(executable)} --help for options. No Node.js installation is required.\nSee docs/releases.md for platform and launch instructions; docs/operations.md\ncontains environment configuration. Never put passwords in command arguments.\nThis is an unsigned development release (macOS: ad-hoc signed, not notarized).\nCorresponding source commit: ${commit}\n`);
     fs.mkdirSync(path.join(ROOT, 'dist'), { recursive: true });
     const archive = path.join(ROOT, 'dist', `${name}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`);
@@ -89,4 +103,4 @@ Run ${path.basename(executable)} --help for options. No Node.js installation is 
     console.log(JSON.stringify({ executable: extractedExecutable, archive, target }));
 }
 if (require.main === module) main().catch((error) => { console.error(error.message); process.exitCode = 1; });
-module.exports = { bundle, NODE_VERSION };
+module.exports = { bundle, NODE_VERSION, DOCUMENTATION_FILES, stageDocumentation };

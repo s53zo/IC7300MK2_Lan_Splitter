@@ -28,7 +28,7 @@ for (const sub of ['01', '02', '03', '06', '07', '08', '09', '0a', '0b', '0c', '
   add(`14${sub}`, 'settings', 2, range(0, 255));
 }
 for (const sub of ['02', '12', '22', '40', '41', '42', '43', '44', '45', '48', '4f', '50', '56', '57', '58', '65']) {
-  const max = sub === '12' ? 3 : ['02', '57', '58'].includes(sub) ? 2 : sub === '56' ? 31 : 1;
+  const max = sub === '12' ? 3 : ['02', '57', '58'].includes(sub) ? 2 : 1;
   add(`16${sub}`, 'settings', 1, range(sub === '12' ? 1 : 0, max));
 }
 add('1a03', 'settings', 1, range(0, 49)); // Filter width index, mode-dependent.

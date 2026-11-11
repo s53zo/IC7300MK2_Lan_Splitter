@@ -16,8 +16,11 @@ obfuscated on the wire, not protected by transport encryption.
 
 ## Configuration
 
-All settings are environment variables. `node src/cli.js --help` prints the CLI
-reference. There are no password command-line options.
+The legacy headless service uses environment variables. Run
+`node src/cli.js --headless` from source or `./icom-lan-splitter --headless` from
+an extracted standalone archive. `--help` prints the CLI reference. Interactive
+interfaces save a profile; Linux HTTPS management is described in the
+[web service guide](linux-web-service.md). There are no password command-line options.
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
@@ -35,6 +38,7 @@ reference. There are no password command-line options.
 | `ICOM_CLIENT_TIMEOUT_MS` | Per-client stream heartbeat timeout | `15000` |
 | `ICOM_RADIO_TIMEOUT_MS` | Upstream stream heartbeat timeout | `15000` |
 | `ICOM_COMMAND_TIMEOUT_MS` | Serialized CI-V reply timeout | `2000` |
+| `ICOM_TELEMETRY_ENABLED` | Shared scheduled meter polling, strictly `0` or `1` | `0` |
 | `ICOM_CACHE_ENABLED` | Client read cache and coalescing, strictly `0` or `1` | `1` |
 | `ICOM_CACHE_METERS_MS` | Meter/ADC overflow TTL, integer 0–1000 ms | `100` |
 | `ICOM_CACHE_STATE_MS` | RX/TX and tuner TTL, integer 0–1000 ms | `100` |
@@ -81,7 +85,12 @@ notifications invalidate cached data; scope sample traffic does not. Internal
 polls and TX safety checks always read the radio afresh. Stable internal polls
 may populate the client cache; startup/release checks neither consume nor
 populate it. This reduces repeated CI-V reads; it does not change audio handling
-or guarantee that audio dropouts will disappear.
+or guarantee that audio dropouts will disappear. With shared telemetry polling
+enabled, local answers can reuse scheduled samples. Background reads still cost
+radio transactions, so local-answer totals do not measure net radio reads saved.
+Compare physical dispatch counts and actual traffic when assessing load. See
+[shared telemetry behavior](interfaces.md#shared-telemetry-polling-builds-after-v081)
+for refresh targets and fallback behavior.
 
 On Linux/macOS, `SIGUSR2` writes one JSON status line to stdout containing radio
 state, broker queue/pending/TX ownership booleans and cache counters, including
@@ -99,14 +108,19 @@ process lifetime and do not prove audio quality or physical RF state.
 ## Install as a service
 
 Use an account that can read only its own password file. Keep the repository or
-installed package at a stable path. Templates use placeholder paths, username and
-LAN addresses; edit them before use. Secrets belong in the referenced file, not
-in the service definition.
+extracted standalone package at a stable path. Templates default to a standalone
+executable and use placeholder paths, username and LAN addresses; edit them
+before use. For a source checkout, replace the launch command with an absolute
+Node.js path followed by the absolute `src/cli.js` path and `--headless` (or
+`--web` for HTTPS management). Each template includes the source alternative.
+Desktop GUI applications are launched interactively; use a standalone archive or
+source checkout for these service templates. Secrets belong in the referenced
+file, not in the service definition.
 
 ### Linux/systemd
 
 Copy [icom-lan-splitter.service](services/icom-lan-splitter.service) to
-`/etc/systemd/system/`, adjust the Node path, working directory, user and
+`/etc/systemd/system/`, adjust the executable path, working directory, user and
 configuration, then:
 
 ```sh
@@ -131,9 +145,9 @@ launchctl print gui/$(id -u)/local.icom-lan-splitter
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/local.icom-lan-splitter.plist
 ```
 
-A LaunchAgent starts in the user's login session. Use the absolute Node path
-reported by `command -v node`; a shell's version-manager setup is not loaded.
-The template writes diagnostics to local log files.
+A LaunchAgent starts in the user's login session. For source operation, use the
+absolute Node path reported by `command -v node`; a shell's version-manager setup
+is not loaded. The template writes diagnostics to local log files.
 
 ### Windows/Task Scheduler
 

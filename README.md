@@ -7,8 +7,9 @@ The service connects to the radio once; clients connect to the service's address
 instead of the radio's address. Audio, spectrum/waterfall and radio state are
 shared. Clients share the actual receiver's tuning and settings.
 
-This is a native Icom UDP service for local networks. It does not provide a web
-UI, rigctld, TCI, or virtual serial/audio devices. The implemented audio format is
+This is a native Icom UDP service for local networks, with optional Linux HTTPS
+management. Radio clients use the native UDP ports. It does not provide rigctld,
+TCI, or virtual serial/audio devices. The implemented audio format is
 **LPCM mono, signed 16-bit little-endian, 48 kHz (codec 4)**. Other formats are
 explicitly rejected. General native-client compatibility is the goal; see the
 [validation matrix](docs/validation.md) for what has actually been tested.
@@ -30,8 +31,8 @@ On first launch, enter the radio address, username and password, then choose
 separate Node.js installation, configuration scripts or terminal commands are
 needed on Windows/Mac. Linux opens a keyboard-operated interface.
 
-The local interface must stay open: closing stops its splitter, with confirmation
-during transmission. Dashboard, Clients, Cache, Settings and Diagnostics show
+The desktop or terminal interface must stay open: closing stops its splitter,
+with confirmation during transmission. Dashboard, Clients, Cache, Settings and Diagnostics show
 connection health and measured timing. Settings are saved locally; password
 protection uses the OS vault on desktop and an explicitly unencrypted owner-only
 file on Linux. History stays in memory for at most 15 minutes.
@@ -46,8 +47,8 @@ until a maintainer publishes them. Optional headless bundles remain available.
 
 ## Linux headless web management
 
-New source builds also support a boot-persistent Linux service with the same
-configuration and statistics in an HTTPS browser interface, normally on port
+Current source and new standalone builds support a boot-persistent Linux service
+with the same configuration and statistics in an HTTPS browser interface, normally on port
 **50004**. Closing the browser or signing out leaves the service running. This
 mode is Linux-only; Windows/Mac desktop behavior is unchanged. It was added after
 the v0.8.1 downloads above. See [Linux web service setup](docs/linux-web-service.md).
@@ -70,7 +71,7 @@ export ICOM_RADIO_HOST=10.0.1.25
 export ICOM_USERNAME=your-radio-user
 export ICOM_PASSWORD_FILE="$HOME/.config/icom-splitter/password"
 export ICOM_BIND_ADDRESS=192.168.1.20
-node src/cli.js
+node src/cli.js --headless
 ```
 
 Windows PowerShell:
@@ -80,7 +81,7 @@ $env:ICOM_RADIO_HOST = '10.0.1.25'
 $env:ICOM_USERNAME = 'your-radio-user'
 $env:ICOM_PASSWORD_FILE = "$env:USERPROFILE\.config\icom-splitter\password"
 $env:ICOM_BIND_ADDRESS = '192.168.1.20'
-node .\src\cli.js
+node .\src\cli.js --headless
 ```
 
 Replace `192.168.1.20` with the splitter computer's LAN IPv4 address. The default
@@ -104,6 +105,10 @@ short caches (100 ms meters/state, 250 ms settings, 50 ms tuning) and combine
 identical queued reads while preserving write order. Internal safety checks
 always query the radio afresh. Set `ICOM_CACHE_ENABLED=0` to disable caching and
 coalescing; see [cache configuration and status](docs/operations.md#client-read-cache).
+Optional shared telemetry polling serves clients from scheduled samples. Local
+answers measure requests answered without an additional client-triggered read;
+they do not measure net radio traffic saved, because background polls also cost
+radio transactions. Compare physical read counts when evaluating load.
 This does not change the audio path or guarantee relief from audio dropouts. Multiple clients on one
 computer, including clients using the same CI-V controller address, have separate
 sessions and reply routing.
@@ -136,9 +141,10 @@ npm pack --dry-run
 npm run test:capacity -- 16 2000
 ```
 
-Development dependencies are used only for linting; the running service has no
-package dependencies. The capacity command uses a synthetic radio on loopback. It measures the specified
-workload, not maximum LAN capacity or RF quality. Source checkouts include the
+Development dependencies provide linting and desktop build/test tooling; the
+headless service has no runtime package dependencies. The capacity command uses a
+synthetic radio on loopback. It measures the specified workload, not maximum LAN
+capacity or RF quality. Source checkouts include the
 test fixtures required by that command.
 
 - [Architecture and protocol behavior](docs/architecture.md)

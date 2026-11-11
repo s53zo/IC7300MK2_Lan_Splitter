@@ -4,9 +4,11 @@
 <dict>
     <key>Label</key><string>local.icom-lan-splitter</string>
     <key>ProgramArguments</key>
+    <!-- Source checkout alternative: use the absolute Node path, then the
+         absolute src/cli.js path, then the headless option as three array entries. -->
     <array>
-        <string>/usr/local/bin/node</string>
-        <string>/Users/YOUR_USER/icom-splitter/src/cli.js</string>
+        <string>/Users/YOUR_USER/icom-splitter/icom-lan-splitter</string>
+        <string>--headless</string>
     </array>
     <key>WorkingDirectory</key><string>/Users/YOUR_USER/icom-splitter</string>
     <key>EnvironmentVariables</key>

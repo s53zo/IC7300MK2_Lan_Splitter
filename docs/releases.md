@@ -59,6 +59,9 @@ native Intel Mac executable smoke test before a release can be prepared.
 Each archive includes the executable, platform instructions, application license
 and attribution, the Icom transport's third-party license, and the Node.js runtime
 license with its bundled third-party notices. Retain these files when redistributing.
+Installation guides and adaptable service templates are in `docs/` in standalone
+archives. Desktop installations also keep them under `resources/docs/` on Windows
+and `Icom LAN Splitter.app/Contents/Resources/docs/` on macOS.
 The application is AGPL-3.0-only; its corresponding source and build scripts are
 in this repository at the commit identified by the release.
 
@@ -88,7 +91,12 @@ Get-FileHash .\icom-lan-splitter-<version>-win32-x64.zip -Algorithm SHA256
 
 Extract the archive into a versioned directory. On Linux/macOS, run
 `./icom-lan-splitter --help`; on Windows, run `.\icom-lan-splitter.exe --help`
-from PowerShell. This is a foreground command-line service, not a desktop UI.
+from PowerShell. Windows/macOS standalone executables run the foreground
+environment-configured service; Linux opens the terminal interface when attached
+to a terminal. Use `--headless` explicitly for the environment-configured service
+on every platform. Current Linux builds also accept `--web` for
+[persistent HTTPS management](linux-web-service.md); the earlier v0.8.1 downloads
+predate that mode.
 
 The macOS executable has an ad-hoc signature needed for execution. It has no
 Apple Developer ID signature and is not notarized. macOS may block a downloaded
@@ -109,7 +117,7 @@ export ICOM_RADIO_HOST=192.168.1.50
 export ICOM_USERNAME=your-radio-user
 export ICOM_PASSWORD_FILE="$HOME/.config/icom-splitter/password"
 export ICOM_BIND_ADDRESS=192.168.1.20
-./icom-lan-splitter
+./icom-lan-splitter --headless
 ```
 
 Windows PowerShell:
@@ -119,7 +127,7 @@ $env:ICOM_RADIO_HOST = '192.168.1.50'
 $env:ICOM_USERNAME = 'your-radio-user'
 $env:ICOM_PASSWORD_FILE = "$env:USERPROFILE\.config\icom-splitter\password"
 $env:ICOM_BIND_ADDRESS = '192.168.1.20'
-.\icom-lan-splitter.exe
+.\icom-lan-splitter.exe --headless
 ```
 
 Replace addresses with your radio and this computer's LAN IPv4 address. Configure
@@ -133,7 +141,7 @@ Keep secrets out of command arguments, release archives and source control.
 
 ## Prepare a release
 
-The [release workflow](../.github/workflows/release.yml) builds five native standalone targets and three native desktop installers.
+The [release workflow](https://github.com/s53zo/IC7300MK2_Lan_Splitter/blob/main/.github/workflows/release.yml) builds five native standalone targets and three native desktop installers.
 Linux ARM64 uses a native ARM runner, and Intel/Apple Silicon macOS use separate
 runners. Runner availability and architecture labels are documented by
 [GitHub](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).

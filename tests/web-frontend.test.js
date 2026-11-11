@@ -5,15 +5,15 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 function bridge(fetch) {
-    const listeners = {}, intervals = [], redirected = [];
+    const listeners = {}, intervals = [], redirected = [], cleared = [];
     const document = { readyState: 'loading', addEventListener: (name, callback) => { listeners[name] = callback; },
         getElementById: () => null, querySelector: () => null };
     const window = { addEventListener: (name, callback) => { listeners[name] = callback; } };
     const context = { window, document, location: { origin: 'https://splitter.example', replace: (url) => redirected.push(url) }, fetch,
-        setTimeout: () => {}, clearInterval: () => {}, setInterval: (callback) => { intervals.push(callback); return 1; },
+        setTimeout: () => {}, clearInterval: (timer) => cleared.push(timer), setInterval: (callback) => { intervals.push(callback); return intervals.length; },
         console, URL, Blob, MutationObserver: class { observe() {} } };
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/web/bridge.js'), 'utf8'), context);
-    return { api: window.splitter, listeners, intervals, redirected, context };
+    return { api: window.splitter, listeners, intervals, redirected, cleared, context };
 }
 const response = (value, status = 200) => ({ status, json: async () => value });
 
@@ -35,6 +35,86 @@ test('browser requests wait for authenticated session and send in-memory CSRF wi
     assert.deepEqual(JSON.parse(calls[1].options.body), { action: 'fields' });
     assert.equal(b.context.window.csrfToken, undefined);
     assert.equal('localStorage' in b.context, false); assert.equal('sessionStorage' in b.context, false);
+});
+
+test('BFCache restore revalidates the session and resumes one polling timer with fresh CSRF', async () => {
+    const calls = []; let sessions = 0, releaseSession;
+    const b = bridge(async (url, options) => {
+        calls.push({ url, options });
+        if (url === '/api/session') {
+            if (++sessions === 2) return new Promise((resolve) => { releaseSession = resolve; });
+            return response({ ok: true, value: { authenticated: true, csrf: 'old-csrf' } });
+        }
+        return response({ ok: true, value: { sequence: calls.length } });
+    });
+    const snapshots = []; b.api.subscribe((value) => snapshots.push(value));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(snapshots.length, 1);
+    b.listeners.pagehide({ persisted: true });
+    b.listeners.pageshow({ persisted: true });
+    const action = b.api.request('fields');
+    assert.equal(calls.filter((call) => call.url === '/api/request').length, 1, 'actions wait for restored authentication');
+    releaseSession(response({ ok: true, value: { authenticated: true, csrf: 'fresh-csrf' } }));
+    assert.equal((await action).ok, true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(snapshots.length, 2);
+    assert.equal(b.intervals.length, 2, 'one replacement interval is created');
+    assert.ok(b.cleared.includes(1));
+    assert.ok(calls.filter((call) => call.url === '/api/request').slice(1).every((call) => call.options.headers['X-CSRF-Token'] === 'fresh-csrf'));
+    await b.intervals[1](); assert.equal(snapshots.length, 3);
+    b.listeners.pageshow({ persisted: false }); assert.equal(sessions, 2, 'ordinary pageshow does not duplicate session checks');
+    assert.deepEqual(b.redirected, []);
+});
+
+test('BFCache restore of an expired session redirects without resuming requests or controlling the radio', async () => {
+    const actions = []; let sessions = 0;
+    const b = bridge(async (url, options) => {
+        if (url === '/api/session') return response({ ok: true, value: { authenticated: ++sessions === 1, csrf: 'csrf' } });
+        actions.push(JSON.parse(options.body).action); return response({ ok: true, value: {} });
+    });
+    b.api.subscribe(() => {}); await new Promise((resolve) => setImmediate(resolve));
+    b.listeners.pagehide({ persisted: true }); b.listeners.pageshow({ persisted: true });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(b.redirected, ['/login']); assert.ok(b.cleared.includes(2), 'expired authentication clears the restore retry timer');
+    assert.equal((await b.api.request('start')).ok, false);
+    assert.deepEqual(actions, ['state']);
+});
+
+test('a transient restored-session failure retries authentication before polling resumes', async () => {
+    const tokens = []; let sessions = 0;
+    const b = bridge(async (url, options) => {
+        if (url === '/api/session') {
+            if (++sessions === 2) throw new Error('Temporary network failure');
+            return response({ ok: true, value: { authenticated: true, csrf: sessions === 1 ? 'old-csrf' : 'restored-csrf' } });
+        }
+        tokens.push(options.headers['X-CSRF-Token']); return response({ ok: true, value: { running: true } });
+    });
+    const snapshots = []; b.api.subscribe((value) => snapshots.push(value));
+    await new Promise((resolve) => setImmediate(resolve));
+    b.listeners.pagehide({ persisted: true }); b.listeners.pageshow({ persisted: true });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(sessions, 2); assert.equal(snapshots.length, 1, 'failed authentication check cannot send state requests');
+    assert.equal(b.intervals.length, 2, 'a bounded interval remains available to retry');
+    await b.intervals[1]();
+    assert.equal(sessions, 3); assert.equal(snapshots.length, 2);
+    assert.deepEqual(tokens, ['old-csrf', 'restored-csrf']); assert.deepEqual(b.redirected, []);
+});
+
+test('in-flight pre-navigation state cannot overwrite the restored page', async () => {
+    let requests = 0, releaseOld;
+    const b = bridge(async (url) => {
+        if (url === '/api/session') return response({ ok: true, value: { authenticated: true, csrf: 'csrf' } });
+        if (++requests === 1) return new Promise((resolve) => { releaseOld = resolve; });
+        return response({ ok: true, value: { sequence: 'fresh' } });
+    });
+    const snapshots = []; b.api.subscribe((value) => snapshots.push(value));
+    await new Promise((resolve) => setImmediate(resolve));
+    b.listeners.pagehide({ persisted: true }); b.listeners.pageshow({ persisted: true });
+    await new Promise((resolve) => setImmediate(resolve));
+    releaseOld(response({ ok: true, value: { sequence: 'stale' } }));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(snapshots.length, 0);
+    await b.intervals.at(-1)(); assert.equal(snapshots.length, 1); assert.equal(snapshots[0].sequence, 'fresh');
 });
 
 test('browser close never sends a radio/service shutdown request', async () => {

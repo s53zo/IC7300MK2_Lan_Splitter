@@ -1,0 +1,30 @@
+{
+  "result": "pass",
+  "browser": "Chrome/157.0.8103.39",
+  "platform": "darwin",
+  "stockProductionHeaders": {
+    "restored": false,
+    "reasons": [
+      [
+        {
+          "type": "Circumstantial",
+          "reason": "MainResourceHasCacheControlNoStore"
+        },
+        {
+          "type": "Circumstantial",
+          "reason": "JsNetworkRequestReceivedCacheControlNoStoreResource"
+        }
+      ]
+    ]
+  },
+  "controlledFixtureHeaders": "Cache-Control: no-cache, test only; production headers unchanged",
+  "persistedPageshowObserved": true,
+  "sameHeapRestored": true,
+  "resumedPolling": true,
+  "expiredPersistedSessionRedirect": true,
+  "browserCloseKeepsService": true,
+  "actions": [
+    "state"
+  ],
+  "physicalRadioUsed": false
+}

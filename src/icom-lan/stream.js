@@ -5,13 +5,23 @@ const { randomBytes } = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const P = require('./protocol');
 
+const TRANSPORT_COUNTERS = Object.freeze(['malformed', 'stale', 'duplicates', 'lost', 'replayed',
+  'sendDrops', 'sendErrors', 'sendCompleted', 'payloadStalls']);
+
 // One RS-BA1 UDP association. Each control/serial/audio stream has its own
 // socket, random ID, sequence space, replay history and bounded reorder queue.
 class IcomStream extends EventEmitter {
   constructor({ host, port, role, localPort = 0, bindAddress = '0.0.0.0', now = () => performance.now(),
-    handshakeMs = 500, timeoutMs = 15000, reorderMs = 80, maxPackets = 256 } = {}) {
+    handshakeMs = 500, timeoutMs = 15000, reorderMs = 80, maxPackets = 256,
+    maxPendingBytes = 256 * 1024, maxPendingPackets = 256, recoverPayloadStall = false,
+    payloadStallMs = 2000, payloadStallPackets = 32 } = {}) {
     super();
     Object.assign(this, { host, port, role, localPort, bindAddress, now, handshakeMs, timeoutMs, reorderMs, maxPackets });
+    Object.assign(this, { maxPendingBytes, maxPendingPackets, recoverPayloadStall, payloadStallMs, payloadStallPackets });
+    for (const name of ['maxPendingBytes', 'maxPendingPackets', 'payloadStallPackets']) {
+      if (!Number.isSafeInteger(this[name]) || this[name] <= 0) throw new Error(`Invalid Icom LAN ${name}`);
+    }
+    if (!Number.isFinite(payloadStallMs) || payloadStallMs <= 0) throw new Error('Invalid Icom LAN payloadStallMs');
     this.localId = randomBytes(4).readUInt32BE();
     this.remoteId = 0;
     this.socket = null;
@@ -21,7 +31,11 @@ class IcomStream extends EventEmitter {
     this.lastDelivered = null;
     this.replay = new Map();
     this.reorder = new Map();
-    this.counters = { malformed: 0, stale: 0, duplicates: 0, lost: 0, replayed: 0 };
+    this.counters = Object.fromEntries(TRANSPORT_COUNTERS.map((key) => [key, 0]));
+    this.statisticsEpoch = 0;
+    this.outstanding = new Map();
+    this.outstandingBytes = this.outstandingSends = 0;
+    this.pendingMediaBytes = this.pendingMediaSends = 0;
     this.resetPing();
   }
 
@@ -85,6 +99,8 @@ class IcomStream extends EventEmitter {
   start() {
     const t = this.now();
     this.resetPing();
+    this.unusablePayload = undefined;
+    this.lastHeartbeatRx = undefined;
     this.startedAt = this.lastRx = this.lastHandshake = t;
     this.lastIdle = this.lastPing = t;
     this.handshake();
@@ -98,8 +114,42 @@ class IcomStream extends EventEmitter {
   }
 
   raw(p) {
-    if (!this.socket) return;
-    this.socket.send(p, (err) => { if (err && this.socket) this.fail(`${this.role} UDP send failed`); });
+    const socket = this.socket;
+    if (!socket || this.closing) return false;
+    const bytes = p.length;
+    const media = this.role === 'audio' && bytes > 16 && p.readUInt16LE(4) === P.TYPE.IDLE;
+    if (this.role === 'audio' && (media
+      ? this.pendingMediaBytes + bytes > this.maxPendingBytes || this.pendingMediaSends >= this.maxPendingPackets
+      : this.outstandingBytes - this.pendingMediaBytes + bytes > 4096 || this.outstandingSends - this.pendingMediaSends >= 64)) {
+      ++this.counters.sendDrops;
+      return false;
+    }
+    // Metadata only: there is no application media queue to drain after a
+    // lease ends. Already submitted UDP datagrams cannot be recalled.
+    const token = {}, epoch = this.statisticsEpoch;
+    this.outstanding.set(token, { bytes, media });
+    this.outstandingBytes += bytes;
+    ++this.outstandingSends;
+    if (media) { this.pendingMediaBytes += bytes; ++this.pendingMediaSends; }
+    const done = (err) => {
+      if (!this.outstanding.delete(token)) return;
+      this.outstandingBytes -= bytes;
+      --this.outstandingSends;
+      if (media) { this.pendingMediaBytes -= bytes; --this.pendingMediaSends; }
+      if (epoch === this.statisticsEpoch) {
+        ++this.counters.sendCompleted;
+        if (err) ++this.counters.sendErrors;
+      }
+      if (err && this.socket === socket && !this.closing) this.fail(`${this.role} UDP send failed`);
+    };
+    try { socket.send(p, done); }
+    catch (err) { done(err); return false; }
+    return true;
+  }
+
+  resetStatistics() {
+    ++this.statisticsEpoch;
+    for (const key of Object.keys(this.counters)) this.counters[key] = 0;
   }
 
   tracked(p, { group, append = false } = {}) {
@@ -111,7 +161,10 @@ class IcomStream extends EventEmitter {
     this.replay.delete(seq);
     this.replay.set(seq, { packet: p, group });
     while (this.replay.size > this.maxPackets) this.replay.delete(this.replay.keys().next().value);
-    this.raw(p);
+    if (this.raw(p) === false) {
+      const retained = this.replay.get(seq);
+      if (retained) retained.packet = null;
+    }
     return seq;
   }
 
@@ -120,6 +173,7 @@ class IcomStream extends EventEmitter {
   }
 
   receive(p) {
+    if (this.failed || this.closing) return;
     const h = P.header(p);
     if (!h) { this.counters.malformed++; return; }
     if (h.receiver !== this.localId || (this.remoteId && h.sender !== this.remoteId)) {
@@ -142,6 +196,7 @@ class IcomStream extends EventEmitter {
       return;
     }
     if (h.type === P.TYPE.PING && p.length === 21) {
+      if (p[16] === 0 || p[16] === 1) this.lastHeartbeatRx = this.now();
       if (p[16] === 0) {
         const reply = P.packet(21, P.TYPE.PING, this.localId, this.remoteId, h.seq);
         reply[16] = 1;
@@ -182,10 +237,36 @@ class IcomStream extends EventEmitter {
       this.drain();
       if (this.reorder.size && this.gapSince === undefined) this.gapSince = this.now();
       if (this.reorder.size > this.maxPackets) this.skipGap();
-    } else this.counters.duplicates++;
+    } else {
+      this.counters.duplicates++;
+      this.observeUnusablePayload(p, h.seq);
+    }
   }
 
-  deliver(p) { if (p.length > 16) this.emit('payload', p); }
+  observeUnusablePayload(p, seq) {
+    // Only the upstream audio association opts in. Server peers retain their
+    // receive watermark across leases; changing it could revive stale TX.
+    if (!this.recoverPayloadStall || this.role !== 'audio' || !P.audioPayload(p)
+      || P.distance(seq, this.lastDelivered) < 0x8000) return;
+    const now = this.now();
+    let stalled = this.unusablePayload;
+    if (!stalled || now - stalled.lastAt >= this.payloadStallMs) {
+      stalled = this.unusablePayload = { since: now, lastAt: now, seq, packets: 1 };
+    } else if (P.after(seq, stalled.seq)) { stalled.seq = seq; stalled.lastAt = now; ++stalled.packets; }
+    else return; // Repeated replay of one packet is not fresh media progress.
+    if (now - stalled.since >= this.payloadStallMs && stalled.packets >= this.payloadStallPackets
+      && this.lastHeartbeatRx !== undefined && now - this.lastHeartbeatRx < Math.min(this.timeoutMs, 2000)) {
+      ++this.counters.payloadStalls;
+      this.fail('audio sequence progress stalled; renewing Icom LAN association');
+    }
+  }
+
+  deliver(p) {
+    if (p.length > 16) {
+      if (this.role === 'audio' && P.audioPayload(p)) this.unusablePayload = undefined;
+      this.emit('payload', p);
+    }
+  }
 
   drain() {
     let next = (this.lastDelivered + 1) & 0xffff;
@@ -221,6 +302,7 @@ class IcomStream extends EventEmitter {
   }
 
   tick() {
+    if (this.failed || this.closing) return;
     const now = this.now();
     if (now - this.lastRx >= this.timeoutMs) { this.fail(`${this.role} stream timed out; check radio address, ports and Network Control`); return; }
     if (!this.ready) {
@@ -257,20 +339,21 @@ class IcomStream extends EventEmitter {
   }
 
   async close() {
+    if (this.closePromise) return this.closePromise;
     clearInterval(this.timer);
     this.resetPing();
     const socket = this.socket;
-    if (!socket) return;
-    if (this.remoteId) {
-      const bye = P.packet(16, P.TYPE.DISCONNECT, this.localId, this.remoteId);
-      await new Promise((resolve) => socket.send(bye, () => resolve()));
-    }
+    if (socket && this.remoteId) this.raw(P.packet(16, P.TYPE.DISCONNECT, this.localId, this.remoteId));
+    this.closing = true;
     this.socket = null;
     this.ready = false;
     this.replay.clear();
     this.reorder.clear();
-    await new Promise((resolve) => socket.close(resolve));
+    this.outstanding.clear();
+    this.outstandingBytes = this.outstandingSends = this.pendingMediaBytes = this.pendingMediaSends = 0;
+    if (socket) this.closePromise = new Promise((resolve) => { try { socket.close(resolve); } catch { resolve(); } });
+    return this.closePromise;
   }
 }
 
-module.exports = { IcomStream };
+module.exports = { IcomStream, TRANSPORT_COUNTERS };

@@ -45,7 +45,7 @@ Optional:
                          Blank inherits family; 0 disables this query; range 0–1000
                          Global cache switch overrides all; internal safety reads stay fresh
 
-Use a LAN interface address to accept other computers. No web UI or TCP API.
+Use a LAN interface address to accept other computers. Native radio clients use UDP. Optional Linux HTTPS management is available with --web.
 Do not put passwords in command arguments or committed configuration files.
 Stop with Ctrl+C or SIGTERM; normal shutdown attempts confirmed TX release.
 `;
@@ -111,7 +111,13 @@ async function main({ interactiveDefault = false } = {}) {
         if (stopping) return;
         stopping = true;
         process.stdout.write('Stopping; releasing radio transmission if connected.\n');
-        try { await service.close(); } finally { await releaseLock(); }
+        try {
+            const result = await service.close();
+            if (result?.releaseConfirmed === false) {
+                process.stderr.write('Receive state could not be confirmed. Check the radio before leaving it unattended.\n');
+                process.exitCode = 1;
+            }
+        } finally { await releaseLock(); }
     };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
@@ -122,7 +128,13 @@ async function main({ interactiveDefault = false } = {}) {
         await service.start();
         if (!stopping) process.stdout.write(`Ready: ${options.server.bindAddress} UDP ${[service.address().controlPort, service.address().civPort, service.address().audioPort].join('/')}\n`);
     } catch (error) {
-        try { await service.close(); } finally { await releaseLock(); }
+        try {
+            const result = await service.close();
+            if (result?.releaseConfirmed === false) {
+                process.stderr.write('Receive state could not be confirmed. Check the radio before leaving it unattended.\n');
+                process.exitCode = 1;
+            }
+        } finally { await releaseLock(); }
         // Errors from sockets may include endpoints; never include packet dumps
         // or configuration objects in diagnostics.
         throw error;

@@ -11,6 +11,7 @@ const copy = (value) => JSON.parse(JSON.stringify(value));
 const clean = (value, max = 80) => [...String(value || '')].filter((char) => { const code = char.charCodeAt(0); return code >= 32 && (code < 127 || code > 159); }).join('').slice(0, max);
 const CACHE_COUNTS = ['requests', 'hits', 'misses', 'coalesced', 'invalidations'];
 function sumObjects(a = {}, b = {}, gauges = []) {
+    a ??= {}; b ??= {};
     const out = { ...a, ...b };
     for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
         if (gauges.includes(key)) { out[key] = b[key] || 0; continue; }
@@ -30,7 +31,9 @@ function combineMetrics(a, b) {
     if (!a && !b) return null;
     const out = { ...(b || a) };
     for (const key of ['physicalTotal', 'physicalSendErrors', 'radioTimeouts', 'oneWayDispatches', 'responses', 'evictions', 'suppressedQueuedReads']) out[key] = (a?.[key] || 0) + (b?.[key] || 0);
-    for (const key of ['physical', 'reasons', 'invalidationEntries', 'cacheHits', 'byQuery', 'transport']) out[key] = sumObjects(a?.[key], b?.[key]);
+    for (const key of ['physical', 'reasons', 'invalidationEntries', 'cacheHits', 'byQuery']) out[key] = sumObjects(a?.[key], b?.[key]);
+    out.transport = Object.fromEntries([...new Set([...Object.keys(a?.transport || {}), ...Object.keys(b?.transport || {})])]
+        .map((role) => [role, sumObjects(a?.transport?.[role], b?.transport?.[role], ['outstandingBytes', 'outstandingSends'])]));
     for (const key of ['logical', 'eligible']) out[key] = sumObjects(a?.[key], b?.[key], ['active', 'queued', 'inFlight']);
     out.timings = {};
     for (const name of new Set([...Object.keys(a?.timings || {}), ...Object.keys(b?.timings || {})])) {
@@ -53,7 +56,7 @@ class AppController extends EventEmitter {
         this.activeValues = null; this.activePassword = null;
         this.firstRun = true; this.lastError = null; this.connecting = false; this.closed = false;
         this.statisticsStartedAt = this.createdAt;
-        this.service = null; this.history = []; this.events = []; this.totals = { cache: null, metrics: null };
+        this.service = null; this.history = []; this.events = []; this.totals = { cache: null, metrics: null, admission: null };
         this.rates = { requestsPerSecond: 0, radioPerSecond: 0, hitsPerSecond: 0 };
         this.latency = { pingMs: null, pingUpdatedAt: null, pingStale: true, responseMs: null, queueMs: null };
         this.revision = 0; this.operations = Promise.resolve(); this.saves = Promise.resolve();
@@ -131,7 +134,7 @@ class AppController extends EventEmitter {
     }
     txActive() {
         const broker = this.service?.broker;
-        return Boolean(broker && (broker.owner || broker.observedTx || broker.releasing || broker.pending?.policy?.tx
+        return Boolean(broker && (broker.owner || broker.observedTx || broker.releaseUnconfirmed || broker.releasing || broker.pending?.policy?.tx
             || broker.queue?.some((item) => item.policy?.tx)));
     }
     start() {
@@ -177,6 +180,7 @@ class AppController extends EventEmitter {
                 const raw = statusSnapshot(this.service);
                 this.totals.cache = combineCache(this.totals.cache, raw.cache);
                 this.totals.metrics = combineMetrics(this.totals.metrics, raw.metrics);
+                this.totals.admission = sumObjects(this.totals.admission, raw.admission);
             }
             this.service = null; this.activeValues = null; this.activePassword = null;
             await this.releaseRadio?.(); this.releaseRadio = null;
@@ -197,12 +201,12 @@ class AppController extends EventEmitter {
         let closing;
         if (activeTx && service.session.connected) {
             closing = (async () => {
-                await service.broker.release();
-                const confirmed = generation === service.broker.generation && service.session.connected
-                    && !service.broker.owner && !service.broker.observedTx && !service.broker.releasing;
+                const released = await service.broker.release();
+                const confirmed = released === true && generation === service.broker.generation && service.session.connected
+                    && !service.broker.owner && !service.broker.observedTx && !service.broker.releaseUnconfirmed && !service.broker.releasing;
                 await service.close(); return confirmed;
             })();
-        } else closing = service.close().then(() => !activeTx);
+        } else closing = service.close().then((result) => result?.releaseConfirmed ?? !activeTx);
         this.stopRequest = { service, closing, activeTx };
         return this.stopRequest;
     }
@@ -219,6 +223,7 @@ class AppController extends EventEmitter {
             const raw = statusSnapshot(request.service);
             this.totals.cache = combineCache(this.totals.cache, raw.cache);
             this.totals.metrics = combineMetrics(this.totals.metrics, raw.metrics);
+            this.totals.admission = sumObjects(this.totals.admission, raw.admission);
             this.service = null; this.activeValues = null; this.activePassword = null;
             await this.releaseRadio?.(); this.releaseRadio = null;
         }
@@ -256,7 +261,7 @@ class AppController extends EventEmitter {
         return this.closing;
     }
     resetStatistics() {
-        this.totals = { cache: null, metrics: null };
+        this.totals = { cache: null, metrics: null, admission: null };
         this.service?.broker.resetStatistics();
         const streams = [...Object.values(this.service?.session || {}),
             ...[...(this.service?.server.clients.values() || [])].flatMap((client) => Object.values(client.streams || {}))];
@@ -283,6 +288,7 @@ class AppController extends EventEmitter {
             admission: { preAuthExpired: 0, preAuthEvictions: 0, resourceRejects: 0 }, cache: null, metrics: null,
         };
         raw.cache = combineCache(this.totals.cache, raw.cache); raw.metrics = combineMetrics(this.totals.metrics, raw.metrics);
+        raw.admission = sumObjects(this.totals.admission, raw.admission);
         return raw;
     }
     clientRows() {

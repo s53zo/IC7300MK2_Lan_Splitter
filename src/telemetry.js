@@ -12,6 +12,7 @@ const BY_KEY = new Map(DEFINITIONS.map((definition) => [definition.key, definiti
 class SharedTelemetry {
   constructor(broker) {
     this.broker = broker; this.samples = new Map(); this.jobs = new Map(); this.nextDue = new Map();
+    this.invalidatedSamples = new Map();
     this.stats = new Map(DEFINITIONS.map(({ key }) => [key, { rfPolls: 0, localAnswers: 0, zeroReplies: 0, fallbacks: 0, samples: 0, backpressureSkips: 0 }]));
     this.invalidations = 0;
   }
@@ -37,8 +38,29 @@ class SharedTelemetry {
     return sample;
   }
   actualTx() { const state = this.entry('1c00'); return state ? state.reply[6] === 1 : null; }
+  sampleMissReason(key, epoch) {
+    const sample = this.samples.get(key), previous = sample || this.invalidatedSamples.get(key), b = this.broker;
+    if (!previous) return 'absent';
+    if (previous.generation !== b.generation) return 'generation';
+    if (!sample || previous.epoch !== epoch || epoch !== b.cacheEpoch) return 'entry_epoch';
+    return b.options.now() - sample.filledAt >= BY_KEY.get(key).maxAgeMs ? 'expired' : null;
+  }
+  missReason(item) {
+    const key = this.eligible(item.bytes);
+    if (!key) return null;
+    if (item.cacheEpoch !== this.broker.cacheEpoch) return 'admission_epoch';
+    if (!this.healthy()) return 'other';
+    if (BY_KEY.get(key).txOnly) {
+      const stateReason = this.sampleMissReason('1c00', item.cacheEpoch);
+      if (stateReason) return stateReason;
+    }
+    return this.sampleMissReason(key, item.cacheEpoch);
+  }
   invalidate() {
     if (!this.active) return;
+    // Retain only bounded, value-free metadata to explain later fallbacks.
+    // The invalidated replies themselves must never remain available to share.
+    for (const [key, sample] of this.samples) this.invalidatedSamples.set(key, { generation: sample.generation, epoch: sample.epoch });
     this.samples.clear(); this.invalidations++;
     // Old queued refreshes cannot populate the new coherence epoch. In-flight
     // work must still consume its reply before any following transaction.
@@ -74,7 +96,8 @@ class SharedTelemetry {
   }
   prepareFallback(item) {
     const key = this.eligible(item.bytes);
-    if (!key) return;
+    if (!key || item.internal) return;
+    this.broker.metrics.reason('misses', this.missReason(item) || 'other', item.cachePolicy, item);
     // A read at the FIFO head must not wait for a refresh behind a later write.
     // Reuse the established transaction path at this position and cancel only
     // the queued duplicate; an in-flight job already prevents pump dispatch.
@@ -94,6 +117,7 @@ class SharedTelemetry {
     // Stamp the resulting epoch, but only if it was coherent before handling.
     this.samples.set(key, { reply: Buffer.from(reply), generation: b.generation, epoch: b.cacheEpoch,
       filledAt: b.options.now(), filledThroughSerial: b.requestSerial, fillOrigin: item.internal ? item.purpose : 'client' });
+    this.invalidatedSamples.delete(key);
     this.stats.get(key).samples++;
   }
   lookup(item) {

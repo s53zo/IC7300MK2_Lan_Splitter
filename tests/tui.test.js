@@ -26,7 +26,7 @@ class Controller extends EventEmitter {
             { key: 'ICOM_CACHE_ENABLED', label: 'Cache enabled', type: 'boolean', default: '1' },
         ];
         this.values = { ICOM_RADIO_HOST: '', ICOM_USERNAME: '', ICOM_PASSWORD: '', ICOM_CACHE_ENABLED: '1' };
-        this.state = { firstRun: true, running: false, status: { radio: { connected: false }, cache: { enabled: true, hits: 2, requests: 10, misses: 8, coalesced: 1, byQuery: {} }, metrics: {} }, clients: [], history: [], events: [], latency: {}, settings: this.getSettings() };
+        this.state = { firstRun: true, running: false, status: { radio: { connected: false }, broker: { ready: false }, cache: { enabled: true, hits: 2, requests: 10, misses: 8, coalesced: 1, byQuery: {} }, metrics: {} }, clients: [], history: [], events: [], latency: {}, settings: this.getSettings() };
     }
     getFields() { return this.fields; }
     getSettings() { return { values: { ...this.values, ICOM_PASSWORD: '' }, hasPassword: true, credentialProtection: 'owner-only file' }; }
@@ -161,6 +161,54 @@ test('failed save redacts a newly entered password before displaying an error', 
     controller.saveSettings = async () => { throw new Error('Cannot save new-secret'); };
     await key(app, 's');
     assert.match(app.message, /\[redacted\]/); assert.equal(output.text.includes('new-secret'), false);
+});
+
+test('real controller returned startup failures produce actionable TUI errors for Start and Reconnect', async (t) => {
+    const { AppController } = require('../src/app/controller');
+    const { defaults } = require('../src/app/settings');
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'icom-tui-start-failure-'));
+    const controller = new AppController({ directory, sampleMs: 100000, lock: async () => async () => {},
+        createSplitter: () => {
+            const service = new EventEmitter();
+            service.session = { connected: false, state: 'stopped' };
+            service.server = { clients: new Map(), stats: {} };
+            service.broker = { ready: false, queue: [], cacheSnapshot: () => ({}), metricsSnapshot: () => null };
+            service.start = async () => { throw new Error('fixture listener failed'); };
+            service.close = async () => {};
+            return service;
+        } });
+    const app = new TerminalApp({ controller, input: new Input(), output: new Output(), signals: new EventEmitter() });
+    t.after(async () => { await app.forceClose(); await fs.rm(directory, { recursive: true, force: true }); });
+    await app.start();
+    await controller.saveSettings({ ...defaults(), ICOM_RADIO_HOST: '192.0.2.20', ICOM_USERNAME: 'fixture', ICOM_PASSWORD: 'testpass' });
+    app.showView(0);
+    for (const action of ['start', 'reconnect']) {
+        await app.performAction(action, true);
+        assert.equal(app.state.running, false);
+        assert.match(app.message, /Could not connect.*radio address, credentials/);
+        assert.doesNotMatch(app.message, /Started\.|Reconnected\.|connecting to radio/);
+        assert.match(renderScreen(app, 140, 40), /Radio: Stopped/);
+    }
+});
+
+test('TUI distinguishes an active connection attempt from a connected radio', async (t) => {
+    const { app, controller } = await setup(t);
+    await app.performAction('start', false);
+    assert.match(app.message, /connecting to radio/);
+    assert.doesNotMatch(app.message, /Started\./);
+    controller.state.status.radio.connected = true;
+    controller.state.status.broker.ready = false;
+    await app.performAction('start', false);
+    assert.match(app.message, /connecting to radio/);
+    app.view = 0;
+    assert.match(renderScreen(app, 120, 40), /Radio: Connecting \/ reconnecting/);
+    assert.doesNotMatch(renderScreen(app, 120, 40), /Radio: Connected/);
+    controller.state.status.broker.ready = true;
+    await app.performAction('start', false);
+    assert.equal(app.message, 'Started.');
+    assert.match(renderScreen(app, 120, 40), /Radio: Connected/);
+    await app.performAction('reconnect', true);
+    assert.equal(app.message, 'Reconnected.');
 });
 
 test('observed radio RX/TX stays distinct from quiet or pending TX ownership', async (t) => {

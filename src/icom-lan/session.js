@@ -2,7 +2,7 @@
 
 const { EventEmitter } = require('node:events');
 const { randomBytes } = require('node:crypto');
-const { IcomStream } = require('./stream');
+const { IcomStream, TRANSPORT_COUNTERS } = require('./stream');
 const P = require('./protocol');
 const { LanCapture, LanPlayback } = require('./audio');
 
@@ -32,6 +32,36 @@ class IcomSession extends EventEmitter {
     this.generation = 0;
     this.attempts = 0;
     this.stopped = true;
+    this.transportStreams = new Map();
+    this.retiredTransport = {};
+  }
+
+  transportSnapshot() {
+    const snapshot = Object.fromEntries(['control', 'serial', 'audio'].map((role) => [role, {
+      ...Object.fromEntries(TRANSPORT_COUNTERS.map((key) => [key, this.retiredTransport[role]?.[key] || 0])),
+      outstandingBytes: 0, outstandingSends: 0,
+    }]));
+    for (const [stream, role] of this.transportStreams) {
+      for (const [key, value] of Object.entries(stream.counters)) snapshot[role][key] = (snapshot[role][key] || 0) + value;
+      snapshot[role].outstandingBytes += stream.outstandingBytes;
+      snapshot[role].outstandingSends += stream.outstandingSends;
+    }
+    return snapshot;
+  }
+
+  resetTransportStatistics() {
+    this.retiredTransport = {};
+    // Include streams still closing so a reset during recovery cannot fold
+    // pre-reset counters back into the fresh statistics window afterward.
+    for (const stream of this.transportStreams.keys()) stream.resetStatistics();
+  }
+
+  retireTransport(stream) {
+    const role = this.transportStreams.get(stream);
+    if (!role) return;
+    const totals = this.retiredTransport[role] ||= {};
+    for (const [key, value] of Object.entries(stream.counters)) totals[key] = (totals[key] || 0) + value;
+    this.transportStreams.delete(stream);
   }
 
   status(state, message) {
@@ -59,15 +89,19 @@ class IcomSession extends EventEmitter {
     this.authenticated = this.requested = this.granted = this.civSeen = false;
     this.pendingRenewals = new Map();
     this.startedAt = this.options.now();
-    const make = (role, port) => {
+    const make = (role, port, key = role) => {
       const stream = new IcomStream({ host: this.options.host, port, role, now: this.options.now,
         bindAddress: this.options.bindAddress, timeoutMs: this.options.timeoutMs,
-        handshakeMs: this.options.handshakeMs, reorderMs: this.options.reorderMs });
+        handshakeMs: this.options.handshakeMs, reorderMs: this.options.reorderMs,
+        maxPendingBytes: this.options.maxPendingBytes, maxPendingPackets: this.options.maxPendingPackets,
+        recoverPayloadStall: role === 'audio', payloadStallMs: this.options.payloadStallMs,
+        payloadStallPackets: this.options.payloadStallPackets });
+      this.transportStreams.set(stream, key);
       stream.on('failure', (err) => { if (generation === this.generation) this.fail(err); });
       return stream;
     };
     this.control = make('control', this.options.controlPort);
-    this.serial = make('CI-V', this.options.civPort);
+    this.serial = make('CI-V', this.options.civPort, 'serial');
     this.audio = make('audio', this.options.audioPort);
     this.streams = [this.control, this.serial, this.audio];
     const current = (fn) => (...args) => { if (generation === this.generation && !this.tearingDown) fn(...args); };
@@ -239,7 +273,10 @@ class IcomSession extends EventEmitter {
     if (this.control?.ready && this.authId) {
       try { this.sendAuth(1); } catch { /* association already closed */ }
     }
-    await Promise.allSettled(streams.map((s) => s.close()));
+    await Promise.allSettled(streams.map(async (stream) => {
+      try { await stream.close(); }
+      finally { this.retireTransport(stream); }
+    }));
   }
 
   async fail(err, retry = true) {

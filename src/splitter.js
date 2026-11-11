@@ -70,7 +70,7 @@ class Splitter extends EventEmitter {
             // Binding cannot be cancelled portably. Finish it before closing
             // its sockets; open() checks cancellation before radio login.
             await this.binding?.catch(() => {});
-            try { await this.broker.close(); }
+            try { return await this.broker.close(); }
             finally {
                 await this.session.close();
                 await this.server.close();

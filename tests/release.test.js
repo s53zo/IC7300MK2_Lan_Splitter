@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
-const { bundle } = require('../scripts/release-build');
+const { bundle, DOCUMENTATION_FILES, stageDocumentation } = require('../scripts/release-build');
+const { buildConfiguration } = require('../scripts/desktop-build');
 const { metadata } = require('../scripts/release-meta');
 
 test('release tags must match package version and previews identify the exact commit', () => {
@@ -42,4 +43,61 @@ test('linker fails closed on new external or dynamic dependencies', (t) => {
         fs.writeFileSync(path.join(dir, 'src/cli.js'), source);
         assert.throws(() => bundle(dir), /External module|Dynamic require|escapes src/);
     }
+});
+
+test('standalone and desktop staging retain the complete installation document paths', (t) => {
+    const root = path.resolve(__dirname, '..');
+    const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'icom-install-docs-'));
+    t.after(() => fs.rmSync(stage, { recursive: true, force: true }));
+    const required = [
+        'docs/interfaces.md', 'docs/linux-web-service.md', 'docs/operations.md', 'docs/releases.md',
+        'docs/services/Start-Splitter.ps1', 'docs/services/icom-lan-splitter-web.service',
+        'docs/services/icom-lan-splitter.service', 'docs/services/local.icom-lan-splitter.plist',
+    ];
+    assert.deepEqual(DOCUMENTATION_FILES, required);
+    stageDocumentation(root, stage);
+    for (const file of required) assert.deepEqual(fs.readFileSync(path.join(stage, file)), fs.readFileSync(path.join(root, file)));
+    for (const file of required.filter((name) => name.endsWith('.md'))) {
+        const source = fs.readFileSync(path.join(stage, file), 'utf8');
+        for (const [, target] of source.matchAll(/\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g)) {
+            if (/^[a-z][a-z\d+.-]*:/i.test(target)) continue;
+            const [relative, fragment] = target.split('#');
+            const destination = relative ? path.resolve(path.dirname(path.join(stage, file)), decodeURIComponent(relative)) : path.join(stage, file);
+            assert.ok(destination.startsWith(stage + path.sep), `${file} escapes the package: ${target}`);
+            assert.ok(fs.statSync(destination).isFile(), `${file} has a missing package link: ${target}`);
+            if (fragment) {
+                const headings = [...fs.readFileSync(destination, 'utf8').matchAll(/^#{1,6}\s+(.+)$/gm)]
+                    .map(([, heading]) => heading.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s/g, '-'));
+                assert.ok(headings.includes(decodeURIComponent(fragment)), `${file} has a missing heading: ${target}`);
+            }
+        }
+    }
+    for (const arch of ['x64', 'arm64']) {
+        const config = buildConfiguration({ label: '0.8.1', metadataDirectory: '/metadata', electronVersion: '45.2.3', arch });
+        for (const file of required) {
+            assert.ok(config.files.includes(file), `desktop app omits ${file}`);
+            assert.ok(config.extraResources.some((resource) => resource.from === file && resource.to === file),
+                `desktop resources do not preserve ${file}`);
+        }
+        assert.equal(config.publish, null);
+        assert.equal(config.win.signAndEditExecutable, false);
+        assert.equal(config.mac.identity, '-');
+        assert.equal(config.mac.notarize, false);
+        assert.ok(config.extraResources.some((resource) => resource.to === 'LICENSE-ELECTRON.txt'));
+        assert.ok(config.extraResources.some((resource) => resource.to === 'LICENSES-CHROMIUM.html'));
+    }
+});
+
+test('service templates select explicit standalone modes and document source alternatives', () => {
+    const service = (name) => fs.readFileSync(path.resolve(__dirname, '../docs/services', name), 'utf8');
+    assert.match(service('icom-lan-splitter.service'), /^ExecStart=\/opt\/icom-splitter\/icom-lan-splitter --headless$/m);
+    assert.match(service('icom-lan-splitter.service'), /^# ExecStart=\/usr\/bin\/node .*\/src\/cli\.js --headless$/m);
+    assert.match(service('icom-lan-splitter-web.service'), /^ExecStart=\/opt\/icom-splitter\/current\/icom-lan-splitter --web$/m);
+    assert.match(service('icom-lan-splitter-web.service'), /^# ExecStart=\/usr\/bin\/node .*\/src\/cli\.js --web$/m);
+    assert.match(service('Start-Splitter.ps1'), /^& '\.\\icom-lan-splitter\.exe' '--headless'$/m);
+    assert.match(service('Start-Splitter.ps1'), /^# & .*node\.exe' '\.\\src\\cli\.js' '--headless'$/m);
+    const plist = service('local.icom-lan-splitter.plist');
+    assert.match(plist, /<string>\/Users\/YOUR_USER\/icom-splitter\/icom-lan-splitter<\/string>\s*<string>--headless<\/string>/);
+    assert.ok([...plist.matchAll(/<!--[\s\S]*?-->/g)].every(([comment]) => !comment.slice(4, -3).includes('--')),
+        'XML comments must not contain double hyphens');
 });

@@ -11,7 +11,9 @@ WorkingDirectory=/opt/icom-splitter/current
 EnvironmentFile=/etc/icom-splitter/splitter.env
 Environment=ICOM_CONFIG_DIR=/var/lib/icom-splitter
 Environment=ICOM_WEB_PORT=50004
-ExecStart=/usr/bin/node /opt/icom-splitter/current/src/cli.js --web
+ExecStart=/opt/icom-splitter/current/icom-lan-splitter --web
+# Source checkout alternative (replace ExecStart above):
+# ExecStart=/usr/bin/node /opt/icom-splitter/current/src/cli.js --web
 StateDirectory=icom-splitter
 StateDirectoryMode=0700
 Restart=on-failure

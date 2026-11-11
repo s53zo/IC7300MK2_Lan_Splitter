@@ -42,14 +42,39 @@ test('password import is transient and settings contain no password or import pa
     }
 });
 test('credential adapter is used instead of plaintext fallback and malformed settings are rejected', async (t) => {
-    const dir = await directory(t); let password = '';
-    const adapter = { read: async () => password, write: async (value) => { password = value; }, describe: () => 'Test OS vault' };
+    const dir = await directory(t); let password = '', recovery = '';
+    const adapter = { read: async () => password, write: async (value) => { password = value; }, describe: () => 'Test OS vault',
+        forRecovery: () => ({ read: async () => recovery, write: async (value) => { recovery = value; }, remove: async () => { recovery = ''; } }) };
     const store = new SettingsStore(dir, adapter); const result = validate(valid());
     await store.save(result.values, result.password); assert.equal(store.describe(), 'Test OS vault');
     assert.equal((await store.load()).password, 'testpass');
     await assert.rejects(fs.stat(path.join(dir, 'credentials')), { code: 'ENOENT' });
     await fs.writeFile(store.file, '{broken'); await assert.rejects(store.load(), /could not be read/);
     await fs.writeFile(store.file, JSON.stringify({ version: 99, values: {} })); await assert.rejects(store.load(), /unsupported/);
+});
+
+test('custom credential adapters without protected recovery fail before changing credentials', async (t) => {
+    const dir = await directory(t); let writes = 0;
+    const store = new SettingsStore(dir, { read: async () => 'savedpass', write: async () => { writes++; } });
+    await assert.rejects(store.save({}, 'newpass'), /does not support interrupted settings recovery/);
+    assert.equal(writes, 0);
+    assert.deepEqual(await fs.readdir(dir), []);
+});
+
+test('settings saves and reads serialize the whole credential/settings transaction', async (t) => {
+    const dir = await directory(t), store = new SettingsStore(dir);
+    const saves = [store.save({ ICOM_USERNAME: 'first' }, 'firstpass'), store.save({ ICOM_USERNAME: 'second' }, 'secondpass')];
+    const read = store.load();
+    await Promise.all(saves);
+    assert.deepEqual(await read, { values: { ICOM_USERNAME: 'second' }, password: 'secondpass' });
+    assert.deepEqual((await fs.readdir(dir)).sort(), ['credentials', 'settings.json']);
+});
+
+test('saving corrected settings replaces invalid configuration without copying its text into recovery', async (t) => {
+    const dir = await directory(t), store = new SettingsStore(dir);
+    await fs.writeFile(store.file, '{invalid settings', { mode: 0o600 });
+    await store.save({ ICOM_USERNAME: 'corrected' }, 'correctedpass');
+    assert.deepEqual(await store.load(), { values: { ICOM_USERNAME: 'corrected' }, password: 'correctedpass' });
 });
 test('filesystem fallback rejects loose permissions and credential symlinks', async (t) => {
     if (process.platform === 'win32') return;

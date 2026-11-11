@@ -7,6 +7,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { gunzipSync, inflateRawSync } = require('node:zlib');
 const { packageArchive } = require('../scripts/release-archive');
+const { DOCUMENTATION_FILES, stageDocumentation } = require('../scripts/release-build');
 
 async function fixture(t) {
     const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'icom-archive-'));
@@ -88,6 +89,43 @@ for (const extension of ['tar.gz', 'zip']) {
             assert.ok((await fs.stat(path.join(extracted, 'release', 'empty'))).isDirectory());
             if (process.platform !== 'win32') assert.equal((await fs.stat(path.join(extracted, 'release', 'program'))).mode & 0o777, 0o755);
         }
+    });
+
+    test(`${extension} extracted installation guides resolve every package-local link`, async (t) => {
+        const { temp, root } = await fixture(t);
+        stageDocumentation(path.resolve(__dirname, '..'), root);
+        const output = path.join(temp, `installation.${extension}`);
+        const repeated = path.join(temp, `installation-repeat.${extension}`);
+        await packageArchive(root, output, 1700000000);
+        await packageArchive(root, repeated, 1700000000);
+        assert.deepEqual(await fs.readFile(output), await fs.readFile(repeated));
+        const extracted = path.join(temp, 'extracted'); await fs.mkdir(extracted);
+        let command = spawnSync('tar', ['-xf', output, '-C', extracted], { encoding: 'utf8' });
+        if (command.status !== 0 && extension === 'zip') command = spawnSync('unzip', ['-q', output, '-d', extracted], { encoding: 'utf8' });
+        assert.equal(command.status, 0, command.error?.message || command.stderr);
+        const packageRoot = path.join(extracted, 'release');
+        for (const file of DOCUMENTATION_FILES) {
+            assert.deepEqual(await fs.readFile(path.join(packageRoot, file)), await fs.readFile(path.join(root, file)));
+            if (!file.endsWith('.md')) continue;
+            const source = await fs.readFile(path.join(packageRoot, file), 'utf8');
+            for (const [, target] of source.matchAll(/\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g)) {
+                if (/^[a-z][a-z\d+.-]*:/i.test(target)) continue;
+                const [relative, fragment] = target.split('#');
+                const destination = relative ? path.resolve(path.dirname(path.join(packageRoot, file)), decodeURIComponent(relative)) : path.join(packageRoot, file);
+                assert.ok(destination.startsWith(packageRoot + path.sep), `${file} escapes its archive: ${target}`);
+                assert.ok((await fs.stat(destination)).isFile(), `${file} has a missing archive link: ${target}`);
+                if (fragment) {
+                    const headings = [...(await fs.readFile(destination, 'utf8')).matchAll(/^#{1,6}\s+(.+)$/gm)]
+                        .map(([, heading]) => heading.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s/g, '-'));
+                    assert.ok(headings.includes(decodeURIComponent(fragment)), `${file} has a missing archive heading: ${target}`);
+                }
+            }
+        }
+        await assert.rejects(fs.stat(path.join(packageRoot, 'docs/screenshots')), { code: 'ENOENT' });
+        await assert.rejects(fs.stat(path.join(packageRoot, 'docs/audits')), { code: 'ENOENT' });
+        assert.match(await fs.readFile(path.join(packageRoot, 'docs/linux-web-service.md'), 'utf8'), /\.\/icom-lan-splitter --web/);
+        assert.match(await fs.readFile(path.join(packageRoot, 'docs/services/icom-lan-splitter-web.service'), 'utf8'),
+            /^ExecStart=.*\/icom-lan-splitter --web$/m);
     });
 }
 

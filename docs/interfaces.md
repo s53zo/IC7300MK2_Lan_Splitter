@@ -3,11 +3,13 @@
 **[Download the latest release](https://github.com/s53zo/IC7300MK2_Lan_Splitter/releases/latest)**
 
 The desktop app is the easiest way to run the splitter on Windows or Mac. Linux
-has a keyboard-operated terminal interface. Each interface controls the splitter
-on **that computer**; it is not a remote control panel for another server.
+has a keyboard-operated terminal interface. These local interfaces control the
+splitter on **that computer**. Current Linux source and new standalone builds
+also offer [HTTPS management](linux-web-service.md) for a persistent service;
+that mode was added after the v0.8.1 downloads.
 
-The interface owns the running splitter. Keep it open while using the radio.
-Closing it disconnects clients and stops its radio connection. If transmission
+The desktop or terminal interface owns its running splitter. Keep it open while
+using the radio. Closing it disconnects clients and stops its radio connection. If transmission
 is active or pending, a normal close asks before attempting to release
 transmission. Cancel leaves the application and connection running.
 
@@ -58,6 +60,8 @@ the extracted directory and run:
 An interactive Linux launch opens the terminal interface. The explicit form is
 `./icom-lan-splitter --tui`. The existing environment-configured service remains
 available through `--headless`; do not use that mode for the interactive setup.
+For persistent browser management, use `./icom-lan-splitter --web` and follow
+the [Linux service setup](linux-web-service.md).
 
 On first launch, Settings opens automatically. Select a field with the arrow
 keys and press Enter to edit it. Enter accepts the field; Escape cancels that
@@ -162,11 +166,12 @@ stop a splitter already running on a different computer.
 - **Command response** measures the radio transaction from dispatch to matching
   reply. **Queue wait** measures time before dispatch. These are different from
   ping and from client-end network or audio-playback latency.
-- **Cache savings** uses eligible reviewed client requests as its denominator.
-  A cache hit avoids one otherwise-needed radio query. Coalesced replies are a
-  subset of hits, not extra savings. Physical transactions include uncached
-  commands and fresh internal safety reads, so their rate has a different
-  denominator.
+- **Local answers** uses eligible reviewed client requests as its denominator.
+  It counts requests served from cached or shared samples without another
+  client-triggered radio read. Coalesced replies are a subset of hits. Scheduled
+  telemetry polls still cost physical radio transactions, so this percentage
+  does not measure net radio queries saved. Compare physical dispatch counts
+  across equivalent workloads when evaluating radio load.
 - **Audio transport health** reports packet counters where available. It does
   not prove that every client heard uninterrupted audio.
 

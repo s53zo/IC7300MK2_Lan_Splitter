@@ -16,7 +16,7 @@ class Service extends EventEmitter {
         this.metrics = { physicalTotal: 0, physical: { clientRead: 0 }, eligible: { admitted: 0, active: 0 }, logical: { admitted: 0, active: 0 }, timings: {}, transport: {} };
         this.broker = { ready: false, queue: [], pending: null, owner: null, observedTx: false, releasing: false, generation: 1,
             cacheSnapshot: () => structuredClone(this.cache), metricsSnapshot: () => structuredClone(this.metrics),
-            release: async () => { this.releases++; this.releaseFenced = !this.broker.ready; this.broker.owner = null; this.broker.observedTx = false; this.broker.pending = null; this.broker.queue = []; },
+            release: async () => { this.releases++; this.releaseFenced = !this.broker.ready; this.broker.owner = null; this.broker.observedTx = false; this.broker.pending = null; this.broker.queue = []; this.broker.releaseUnconfirmed = false; return true; },
         };
     }
     async start() { this.starts++; this.session.connected = true; this.session.state = 'connected'; this.broker.ready = true; this.emit('ready'); }
@@ -94,6 +94,71 @@ test('session counters reconcile across reconnects and graph retention and event
     for (let i = 0; i < 1000; i++) { clock += 1000; c.sample(); c.event('info', 'bounded'); }
     assert.ok(c.getState().history.length <= 900); assert.ok(c.getState().events.length <= 100);
     assert.ok(c.getState().history.every((point) => clock - point.time < 900000));
+});
+test('admission history survives stop/start and repeated reconnects while client gauges stay live', async (t) => {
+    const { controller: c, services } = await setup(t); await c.saveSettings(valid()); await c.start();
+    const initialWindow = c.statisticsStartedAt;
+    Object.assign(services[0].server.stats, { preAuthExpired: 4, preAuthEvictions: 3, resourceRejects: 2 });
+    services[0].server.clients.set('old', { active: true, authenticated: true });
+    assert.equal(c.getState().status.nativeClients.active, 1);
+    await c.stop();
+    assert.deepEqual(c.getState().status.admission, { preAuthExpired: 4, preAuthEvictions: 3, resourceRejects: 2 });
+    assert.equal(c.getState().status.nativeClients.active, 0);
+    assert.equal(c.getState().status.connectedUpstreamSessions, 0);
+    await c.start();
+    for (let i = 1; i <= 2; i++) {
+        Object.assign(services[i].server.stats, { preAuthExpired: 1, preAuthEvictions: 2, resourceRejects: 3 });
+        await c.reconnect();
+        assert.deepEqual(c.getState().status.admission, { preAuthExpired: 4 + i, preAuthEvictions: 3 + 2 * i, resourceRejects: 2 + 3 * i });
+        assert.equal(c.getState().status.nativeClients.active, 0);
+        assert.equal(c.getState().status.broker.queueDepth, 0);
+        assert.equal(c.getState().status.connectedUpstreamSessions, 1);
+    }
+    assert.equal(c.statisticsStartedAt, initialWindow);
+    services[3].broker.resetStatistics = () => {};
+    c.resetStatistics();
+    assert.deepEqual(c.getState().status.admission, { preAuthExpired: 0, preAuthEvictions: 0, resourceRejects: 0 });
+    await c.reconnect(); await c.stop(); await c.start();
+    assert.deepEqual(c.getState().status.admission, { preAuthExpired: 0, preAuthEvictions: 0, resourceRejects: 0 });
+});
+test('failed startup retains admission events once, including a reset during later shutdown', async (t) => {
+    const created = [];
+    const { controller: c } = await setup(t, { createSplitter: (options) => {
+        const service = new Service(options); created.push(service);
+        if (created.length === 1) service.start = async () => {
+            Object.assign(service.server.stats, { preAuthExpired: 2, preAuthEvictions: 3, resourceRejects: 4 });
+            throw new Error('Fixture listener failure');
+        };
+        return service;
+    } });
+    await c.saveSettings(valid()); await c.start();
+    assert.equal(c.getState().running, false);
+    assert.deepEqual(c.getState().status.admission, { preAuthExpired: 2, preAuthEvictions: 3, resourceRejects: 4 });
+    await c.stop(); await c.start();
+    assert.deepEqual(c.getState().status.admission, { preAuthExpired: 2, preAuthEvictions: 3, resourceRejects: 4 });
+    const service = created[1]; service.broker.resetStatistics = () => {};
+    Object.assign(service.server.stats, { preAuthExpired: 1, preAuthEvictions: 1, resourceRejects: 1 });
+    let finishClose;
+    const close = service.close.bind(service);
+    service.close = async () => { await new Promise((resolve) => { finishClose = resolve; }); await close(); };
+    const stopping = c.stop();
+    c.resetStatistics(); finishClose(); await stopping;
+    assert.deepEqual(c.getState().status.admission, { preAuthExpired: 0, preAuthEvictions: 0, resourceRejects: 0 });
+    await c.start();
+    assert.deepEqual(c.getState().status.admission, { preAuthExpired: 0, preAuthEvictions: 0, resourceRejects: 0 });
+});
+test('retired transport counters accumulate while retained send gauges follow only the current service', async (t) => {
+    const { controller: c, services } = await setup(t); await c.saveSettings(valid()); await c.start();
+    services[0].metrics.transport.audio = { malformed: 2, sendDrops: 3, sendErrors: 4, outstandingBytes: 120, outstandingSends: 2 };
+    assert.equal(c.getState().status.metrics.transport.audio.outstandingBytes, 120);
+    await c.stop();
+    assert.deepEqual(c.getState().status.metrics.transport.audio, { malformed: 2, sendDrops: 3, sendErrors: 4, outstandingBytes: 0, outstandingSends: 0 });
+    await c.start();
+    assert.equal(c.getState().status.metrics.transport.audio.outstandingSends, 0);
+    services[1].metrics.transport.audio = { malformed: 1, sendDrops: 2, sendErrors: 3, outstandingBytes: 60, outstandingSends: 1 };
+    assert.deepEqual(c.getState().status.metrics.transport.audio, { malformed: 3, sendDrops: 5, sendErrors: 7, outstandingBytes: 60, outstandingSends: 1 });
+    await c.reconnect();
+    assert.deepEqual(c.getState().status.metrics.transport.audio, { malformed: 3, sendDrops: 5, sendErrors: 7, outstandingBytes: 0, outstandingSends: 0 });
 });
 test('local lock excludes same and different app profiles targeting one radio, then releases', async () => {
     const key = `test-radio:${process.pid}:${Math.random()}`;
@@ -179,10 +244,11 @@ test('saved connection edits do not relabel the active endpoint before reconnect
 });
 
 test('failed credential writes redact candidate and imported passwords while preserving prior settings', async (t) => {
-    let stored = '', fail = false;
+    let stored = '', recovery = '', fail = false;
     const credentialStore = {
         read: async () => stored,
-        write: async (value) => { if (fail) throw new Error(`Credential backend rejected ${value}`); stored = value; },
+        write: async (value) => { if (fail && value !== stored) throw new Error(`Credential backend rejected ${value}`); stored = value; },
+        forRecovery: () => ({ read: async () => recovery, write: async (value) => { recovery = value; }, remove: async () => { recovery = ''; } }),
         describe: () => 'Test credential backend',
     };
     const { controller: c, dir } = await setup(t, { credentialStore });
@@ -244,4 +310,14 @@ test('statistics reset preserves live connections, TX and cache warmth and clear
     await c.reconnect(); assert.equal(c.getState().status.cache.requests, 3);
     services[1].broker.resetStatistics = () => {};
     c.resetStatistics(); assert.equal(c.getState().status.cache.requests, 0);
+});
+
+test('unknown observed TX after disconnect remains gated and is reported unconfirmed on close', async (t) => {
+    const { controller: c, services } = await setup(t); await c.saveSettings(valid()); await c.start();
+    services[0].broker.releaseUnconfirmed = true; services[0].session.connected = false;
+    assert.equal(c.getState().txActive, true);
+    assert.equal((await c.close()).requiresConfirmation, true);
+    services[0].close = async () => ({ releaseConfirmed: false });
+    const result = await c.close({ confirmedTx: true });
+    assert.equal(result.releaseConfirmed, false);
 });
