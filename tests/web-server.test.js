@@ -192,7 +192,10 @@ test('web management shares one actual synthetic radio service with native clien
         ICOM_LISTEN_CONTROL_PORT: controlPort, ICOM_LISTEN_CIV_PORT: civPort, ICOM_LISTEN_AUDIO_PORT: audioPort });
     await controller.start(); const { server } = await setup(t, { controller }); const auth = await login(server, { username: 'beer', password: 'testpass' });
     const address = { host: '127.0.0.1', controlPort, civPort, audioPort };
-    peers.push(await client(address, { password: 'testpass' })); peers.push(await client(address, { password: 'testpass' }));
+    assert.equal(controller.getState().status.broker.ready, true, 'synthetic radio must be ready before client handshakes');
+    // Parallel TLS/native tests can delay Windows CI beyond the fixture's 2s
+    // default. Keep protocol assertions intact with a bounded handshake budget.
+    peers.push(await client(address, { password: 'testpass', timeoutMs: 5000 })); peers.push(await client(address, { password: 'testpass', timeoutMs: 5000 }));
     peers[0].sendCiv(frame(0x15, [2], 0xe1)); peers[1].sendCiv(frame(0x15, [2], 0xe2));
     await until(() => peers.every((peer) => peer.receivedCiv.some((f) => f[4] === 0x15)), 'private radio replies');
     assert.equal(peers[0].receivedCiv.find((f) => f[4] === 0x15)[2], 0xe1); assert.equal(peers[1].receivedCiv.find((f) => f[4] === 0x15)[2], 0xe2);
@@ -208,7 +211,7 @@ test('web management shares one actual synthetic radio service with native clien
     const reconnected = (await api(server, auth, 'reconnect')).json.value;
     assert.equal(reconnected.pendingChanges, false); assert.equal(reconnected.status.cache.querySettings.find((entry) => entry.key === '1502').effectiveMs, 300);
     assert.equal(reconnected.status.connectedUpstreamSessions, 1); assert.equal(radio.connections.control, 2, 'only an explicit reconnect opens the next upstream session');
-    peers.push(await client(address, { password: 'testpass' })); peers.at(-1).sendCiv(frame(0x1c, [0, 1])); await until(() => radio.ptt, 'synthetic TX');
+    peers.push(await client(address, { password: 'testpass', timeoutMs: 5000 })); peers.at(-1).sendCiv(frame(0x1c, [0, 1])); await until(() => radio.ptt, 'synthetic TX');
     assert.equal((await api(server, auth, 'stop')).json.value.requiresConfirmation, true); assert.equal(radio.ptt, true);
     const stopped = (await api(server, auth, 'stop', { confirmedTx: true })).json.value;
     assert.notEqual(stopped.releaseConfirmed, false); assert.equal(radio.ptt, false); assert.equal(controller.closed, false);
