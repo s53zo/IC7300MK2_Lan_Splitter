@@ -300,3 +300,22 @@ private/cache/media behavior, measured ping, pending/apply settings, TX Stop
 confirmation and confirmed release. Closing/reopening the browser and signing
 out preserve the server and radio. OpenSSL-based actual TLS and ARM source tests
 were run. Safari/Firefox rendering and full physical RF output are not claimed.
+
+## Shared telemetry hardware load check — 2026-11-11
+
+[Recorded results](hardware-results/2026-11-11-shared-telemetry.json) compare a
+60-second legacy baseline, 60 seconds of the shared RX schedule, an explicitly
+authorized 20.14-second nominal10W FM dummy-load transmission, and 60 seconds
+of RX afterward. Mode/data/filter and power were restored and frequency was
+unchanged. No media payload was recorded. All source/observer transport loss,
+replay, malformed and stale deltas were zero; no radio timeouts or disconnects
+were detected. Steady audio delivery remained about100 packets/s and scope
+about10 frames/s, including the TX window. These results do not measure audible
+playback quality or externally calibrated watts and are not a long-duration soak.
+
+Actual fast polling was approximately9.6–9.8Hz and ADC about2Hz; the load test
+reached about71 total radio transactions/s during TX including other clients.
+An initial20ms scheduler tick had undershot targets (~9Hz), so the active-mode
+tick was tightened to5ms without changing due-time/backpressure rules. Distinct
+RX/TX observation flags are retained in probe bins to avoid treating normal
+transmit transitions or muting as receive packet dropouts.

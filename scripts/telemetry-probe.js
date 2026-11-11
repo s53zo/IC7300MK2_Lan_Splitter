@@ -76,6 +76,7 @@ function managementSummary(state) {
     const cache = status.cache || {};
     const radioStates = new Set(['stopped', 'disconnected', 'connecting', 'authenticating', 'negotiating', 'opening-streams', 'connected', 'reconnecting', 'failed']);
     return { running: Boolean(state?.running), connecting: Boolean(state?.connecting), pendingChanges: Boolean(state?.pendingChanges),
+        txActive: Boolean(state?.txActive), rxObserved: state?.dashboard?.rxTx === 'RX', txObserved: state?.dashboard?.rxTx === 'TX',
         radio: { state: radioStates.has(status.radio?.state) ? status.radio.state : 'unknown', connected: Boolean(status.radio?.connected) },
         broker: { ready: Boolean(status.broker?.ready), pending: Boolean(status.broker?.pending), queueDepth: status.broker?.queueDepth ?? null, txOwned: Boolean(status.broker?.txOwned) },
         upstreamSessions: status.connectedUpstreamSessions ?? null, clients: numericMetadata(status.nativeClients || {}),
@@ -202,7 +203,7 @@ async function runProbe(options) {
             const at = performance.now();
             bins.push({ second, elapsedMs: rounded(at - startedAt), audio: audio.takeBin(at), scope: scope.takeBin(at),
                 nativeConnected: Boolean(client.connected), managementAvailable: Boolean(current), radioConnected: current?.radio.connected ?? null,
-                brokerReady: current?.broker.ready ?? null, upstreamSessions: current?.upstreamSessions ?? null,
+                brokerReady: current?.broker.ready ?? null, rxObserved: current?.rxObserved ?? null, txObserved: current?.txObserved ?? null, txActive: current?.txActive ?? null, upstreamSessions: current?.upstreamSessions ?? null,
                 radioPhysical: current ? difference(current.metrics?.physical || {}, previous.metrics?.physical || {}) : null });
             if (current) previous = current;
             currentAvailable = Boolean(current);
